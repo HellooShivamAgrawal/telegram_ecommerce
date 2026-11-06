@@ -29,6 +29,8 @@ def add_products(database):
                     name=row['name'], description=row.get('description', ''),
                     price='9.99', quantity_in_stock=row.get('stock', 10),
                     quantity_purchased=0, category_id=category.id,
+                    brand=row.get('brand'), tags=row.get('tags'),
+                    short_description=row.get('short_description'),
                 )
                 for row in rows
             ]
@@ -87,9 +89,9 @@ def test_english_stemming_also_matches_descriptions(add_products):
     assert search_ids('notebooks') == ids
 
 
-def test_lexical_matches_are_not_mixed_with_typo_matches(add_products):
-    exact, _ = add_products({'name': 'Notebok'}, {'name': 'Notebook'})
-    assert search_ids('notebok') == [exact]
+def test_lexical_matches_rank_before_typo_matches(add_products):
+    exact, related = add_products({'name': 'Notebok'}, {'name': 'Notebook'})
+    assert search_ids('notebok') == [exact, related]
 
 
 @pytest.mark.parametrize('phrase', ['notebok', 'noteboks', 'noteboook', 'notbook', 'notebokk'])
@@ -98,9 +100,9 @@ def test_name_typo_fallback(add_products, phrase):
     assert search_ids(phrase) == [notebook]
 
 
-def test_typo_fallback_does_not_match_descriptions(add_products):
-    add_products({'name': 'Planner', 'description': 'Notebook for daily lists'})
-    assert search_ids('notebok') == []
+def test_description_typos_are_retrievable(add_products):
+    ids = add_products({'name': 'Planner', 'description': 'Notebook for daily lists'})
+    assert search_ids('notebok') == ids
 
 
 @pytest.mark.parametrize('phrase', ['red notebooks', 'red notebok', 'red-notebok'])
@@ -134,11 +136,11 @@ def test_missing_modifier_does_not_return_partial_match(add_products):
     assert search_ids('wireless notebok') == []
 
 
-def test_short_words_are_exact_only_in_typo_fallback(add_products):
+def test_three_letter_prefixes_work_but_short_typos_stay_exact(add_products):
     pen, notebook = add_products({'name': 'Pen'}, {'name': 'Blue Notebook'})
     assert search_ids('pen') == [pen]
     assert search_ids('pan') == []
-    assert search_ids('blu notebok') == []
+    assert search_ids('blu notebok') == [notebook]
     assert search_ids('blue notebok') == [notebook]
 
 
@@ -151,11 +153,11 @@ def test_short_model_numbers_still_match_lexically(add_products):
     assert search_ids('A5 notebok') == [a5]
 
 
-def test_unrelated_words_and_substrings_do_not_match(add_products):
-    add_products({'name': 'Notebook'}, {'name': 'Pen'}, {'name': 'Camera'})
+def test_substrings_match_but_unrelated_words_do_not(add_products):
+    notebook, _, _ = add_products({'name': 'Notebook'}, {'name': 'Pen'}, {'name': 'Camera'})
     assert search_ids('spaceship') == []
-    assert search_ids('book') == []
-    assert search_ids('note') == []
+    assert search_ids('book') == [notebook]
+    assert search_ids('note') == [notebook]
 
 
 @pytest.mark.parametrize('phrase', ['notebooks', 'notebok'])

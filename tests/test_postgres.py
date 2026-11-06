@@ -10,6 +10,7 @@ from threading import Barrier
 import pytest
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
@@ -48,7 +49,8 @@ def test_migration_creates_search_index_and_payment_fields(database):
     assert columns['status']['nullable'] is False
     assert 'paid_at' in columns
     with database.connect() as connection:
-        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '29f6c2a7d8b4'
+        expected_head = ScriptDirectory.from_config(Config('alembic.ini')).get_current_head()
+        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == expected_head
         assert connection.scalar(text("SELECT EXISTS (SELECT FROM pg_extension WHERE extname = 'pg_trgm')"))
 
 

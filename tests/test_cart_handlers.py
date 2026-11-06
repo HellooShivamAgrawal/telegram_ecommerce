@@ -143,6 +143,21 @@ class ActivityTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AssistantHandlerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_recent_product_selection_is_context_not_a_cart_instruction(self):
+        ctx = context()
+        ctx.chat_data[assistant_handler.PRODUCT_SELECTION_KEY] = {
+            'id': 7, 'name': 'Notebook', 'selected_at': 100.0,
+        }
+        with patch.object(assistant_handler.time, 'time', return_value=101.0), patch.object(
+            assistant_handler, 'answer_catalog_question', new_callable=AsyncMock, return_value='Ready.',
+        ) as answer:
+            await assistant_handler.answer_message(update(), ctx)
+        history = answer.await_args.kwargs['history']
+        self.assertEqual(answer.await_args.kwargs['selected_product_id'], 7)
+        self.assertEqual(history, [{'role': 'assistant', 'content': 'Product opened by the shopper: Notebook (ID 7).'}])
+        self.assertEqual(assistant_handler._history(ctx.chat_data, 2001.0), [])
+        self.assertNotIn(assistant_handler.PRODUCT_SELECTION_KEY, ctx.chat_data)
+
     async def test_assistant_receives_chat_scope_and_chat_history_only(self):
         event = update()
         ctx = context()

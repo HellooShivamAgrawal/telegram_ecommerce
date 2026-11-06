@@ -10,6 +10,7 @@ from telegram_ecommerce.agent.catalog import (
     answer_catalog_question,
     CartUpdatedResponseError,
     CartActionRejectedError,
+    ProductSelectionRequired,
     CART_TOOLS,
     execute_catalog_tool,
     execute_tool,
@@ -214,6 +215,85 @@ class CatalogAgentTests(unittest.IsolatedAsyncioTestCase):
                                           request_id="telegram:17", client=SimpleNamespace(responses=responses))
         self.assertTrue(rejected.exception.saved)
 
+    async def test_related_only_search_returns_choices_without_another_model_call(self):
+        product = {'id': 7, 'name': 'Notebook', 'price': '9.99', 'match_kind': 'related'}
+        responses = FakeResponses([fake_response('r1', [call('search_products', {'query': 'book'})])])
+        with patch('telegram_ecommerce.agent.catalog.execute_tool', return_value={
+            'products': [product], 'suggestions_only': True,
+        }) as tool, self.assertRaises(ProductSelectionRequired) as selected:
+            await answer_catalog_question('Add a book', chat_id=42, request_id='telegram:choice',
+                                          client=SimpleNamespace(responses=responses))
+        self.assertEqual(selected.exception.products, [product])
+        self.assertFalse(selected.exception.saved)
+        tool.assert_called_once()
+        self.assertEqual(len(responses.requests), 1)
+        self.intent.assert_not_awaited()
+
+    async def test_related_product_cannot_be_written_after_a_details_lookup(self):
+        product = {'id': 7, 'name': 'Notebook', 'price': '9.99', 'match_kind': 'related'}
+        for mutation, arguments in [
+            ('add_to_cart', {'product_id': 7, 'quantity': 1}),
+            ('update_cart_item', {'product_id': 7, 'quantity': 2}),
+            ('remove_from_cart', {'product_id': 7}),
+        ]:
+            with self.subTest(mutation=mutation):
+                responses = FakeResponses([
+                    fake_response('r1', [call('search_products', {'query': 'book'})]),
+                    fake_response('r2', [call('get_product', {'product_id': 7})]),
+                    fake_response('r3', [call(mutation, arguments)]),
+                ])
+                with patch('telegram_ecommerce.agent.catalog.execute_tool', side_effect=[
+                    {'products': [{'id': 8, 'name': 'Book', 'match_kind': 'exact'}, product],
+                     'suggestions_only': False},
+                    {'product': {'id': 7, 'name': 'Notebook'}},
+                ]) as tool, self.assertRaises(ProductSelectionRequired):
+                    await answer_catalog_question('Change the book in my cart', chat_id=42,
+                                                  request_id='telegram:choice',
+                                                  client=SimpleNamespace(responses=responses))
+                self.assertEqual(tool.call_count, 2)
+
+    async def test_guessed_details_lookup_cannot_choose_a_product_for_a_cart_write(self):
+        responses = FakeResponses([
+            fake_response('r1', [call('get_product', {'product_id': 7})]),
+            fake_response('r2', [call('add_to_cart', {'product_id': 7, 'quantity': 1})]),
+        ])
+        with patch('telegram_ecommerce.agent.catalog.execute_tool', return_value={
+            'product': {'id': 7, 'name': 'Notebook', 'price': '9.99'},
+        }) as tool, self.assertRaises(CartActionRejectedError):
+            await answer_catalog_question('Add a book', chat_id=42, request_id='telegram:choice',
+                                          client=SimpleNamespace(responses=responses))
+        tool.assert_called_once()
+
+    async def test_trusted_button_selection_allows_a_fresh_details_lookup_before_add(self):
+        responses = FakeResponses([
+            fake_response('r1', [call('get_product', {'product_id': 7})]),
+            fake_response('r2', [call('add_to_cart', {'product_id': 7, 'quantity': 2})]),
+            fake_response('r3', [], 'Added two notebooks.'),
+        ])
+        with patch('telegram_ecommerce.agent.catalog.execute_tool', side_effect=[
+            {'product': {'id': 7, 'name': 'Notebook', 'price': '9.99'}},
+            {'cart': {'items': [{'product_id': 7, 'name': 'Notebook', 'quantity': 2}]}},
+        ]) as tool:
+            answer = await answer_catalog_question('Add two of it', chat_id=42, request_id='telegram:choice',
+                                                  selected_product_id=7,
+                                                  client=SimpleNamespace(responses=responses))
+        self.assertEqual(answer, 'Added two notebooks.')
+        self.assertEqual(tool.call_count, 2)
+
+    async def test_related_choices_preserve_previously_committed_outcome(self):
+        responses = FakeResponses([
+            fake_response('r1', [call('clear_cart', {})]),
+            fake_response('r2', [call('search_products', {'query': 'book'})]),
+        ])
+        with patch('telegram_ecommerce.agent.catalog.execute_tool', side_effect=[
+            {'cart': {'items': []}},
+            {'products': [{'id': 7, 'name': 'Notebook'}], 'suggestions_only': True},
+        ]), self.assertRaises(ProductSelectionRequired) as selected:
+            await answer_catalog_question('Clear my cart, then find a book', chat_id=42,
+                                          request_id='telegram:choice',
+                                          client=SimpleNamespace(responses=responses))
+        self.assertTrue(selected.exception.saved)
+
 
 class CartIntentTests(unittest.IsolatedAsyncioTestCase):
     async def test_intent_call_is_isolated_and_strict(self):
@@ -237,6 +317,19 @@ class CartIntentTests(unittest.IsolatedAsyncioTestCase):
 
 
 class CatalogToolTests(unittest.TestCase):
+    def test_search_tool_exposes_real_rank_metadata_without_confidence_percentages(self):
+        from telegram_ecommerce.database.search import SearchHit, SearchResult
+        product = SimpleNamespace(id=7, name='Notebook', price='9.99', description='Dotted',
+                                  quantity_in_stock=10, brand='Acme', tags='journal', short_description='A5')
+        result = SearchResult([SearchHit(product, 6.5, 'related', ('name',))], True)
+        with patch('telegram_ecommerce.database.query.search_catalog', return_value=result) as search:
+            output = execute_catalog_tool('search_products', {'query': 'book'})
+        search.assert_called_once_with('book', limit=5)
+        self.assertTrue(output['suggestions_only'])
+        self.assertEqual(output['products'][0]['brand'], 'Acme')
+        self.assertEqual(output['products'][0]['match_kind'], 'related')
+        self.assertNotIn('confidence', output['products'][0])
+
     def test_replayed_database_receipt_is_refreshed(self):
         fresh = {"items": [{"product_id": 7, "quantity": 3}]}
         with patch("telegram_ecommerce.database.cart.mutate_cart", return_value={

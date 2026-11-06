@@ -128,6 +128,8 @@ To add others admin you can use the command(Note: have sure that the people alre
     "without_product_in_this_category" : "There is no product in this category",
     "ask_for_term_to_search" : "Type something to search for products:",
     "without_product_in_this_search" : "There are no products with these terms. Check for typos or search for something similar",
+    "search_closest_matches": "Closest matches — choose a product:",
+    "search_choice_stale": "This option is no longer available. Choose another product or use /search again.",
     "search_description" : "A command to search produts"
 })
 

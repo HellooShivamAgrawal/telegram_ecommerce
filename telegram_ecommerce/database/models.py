@@ -1,7 +1,7 @@
 
 from os import environ
 
-from sqlalchemy import BigInteger, CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, LargeBinary, Numeric, String, Boolean, func, text
+from sqlalchemy import BigInteger, CheckConstraint, Column, Computed, DateTime, ForeignKey, Index, Integer, LargeBinary, Numeric, String, Text, Boolean, func, text
 from sqlalchemy import create_engine
 from sqlalchemy.dialects import postgresql  # Registers PostgreSQL full-text functions.
 from sqlalchemy.engine import URL, make_url
@@ -53,6 +53,14 @@ class Product(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String(30), nullable=False)
     description = Column(String(500), nullable=False)
+    brand = Column(String(80))
+    short_description = Column(String(200))
+    tags = Column(String(500))
+    search_text = Column(Text, Computed(
+        "lower(name || ' ' || coalesce(brand, '') || ' ' || coalesce(tags, '') "
+        "|| ' ' || coalesce(short_description, '') || ' ' || description)",
+        persisted=True,
+    ), nullable=False)
     price = Column(Numeric(12, 2), nullable=False)
     quantity_in_stock = Column(Integer, nullable=False)
     quantity_purchased = Column(Integer, nullable=False)
@@ -70,6 +78,22 @@ Index(
 Index(
     'ix_products_search_english',
     func.to_tsvector(text("'english'"), Product.name + ' ' + Product.description),
+    postgresql_using='gin',
+)
+Index(
+    'ix_products_search_text_trgm',
+    Product.search_text,
+    postgresql_using='gin',
+    postgresql_ops={'search_text': 'gin_trgm_ops'},
+)
+Index(
+    'ix_products_search_text_simple',
+    func.to_tsvector(text("'simple'"), Product.search_text),
+    postgresql_using='gin',
+)
+Index(
+    'ix_products_search_text_english',
+    func.to_tsvector(text("'english'"), Product.search_text),
     postgresql_using='gin',
 )
 
