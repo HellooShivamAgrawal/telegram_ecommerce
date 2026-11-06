@@ -15,3 +15,6 @@ pyvenv.cfg
 telegram_ecommerce.iml
 
 *.env
+
+# Regenerable local source-image cache and marked demo thumbnails.
+data/demo_catalogs/images/

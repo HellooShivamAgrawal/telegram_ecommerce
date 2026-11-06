@@ -98,7 +98,7 @@ def _choice_label(product):
     return name[:max(1, 64 - len(price))] + price
 
 
-async def show_search_choices(update, context, products, *, activity=None, notice=None):
+async def show_search_choices(update, context, products, *, activity=None, notice=None, related=True):
     """Offer a small set of related products without selecting or buying one."""
     data = _search_data(update, context)
     data["generation"] = token_hex(6)
@@ -112,7 +112,7 @@ async def show_search_choices(update, context, products, *, activity=None, notic
         [InlineKeyboardButton(_choice_label(product), callback_data=callback)]
         for product, callback in zip(products, options)
     ])
-    text = get_text("search_closest_matches", context)
+    text = get_text("search_closest_matches" if related else "search_matching_choices", context)
     if notice:
         text = notice + '\n\n' + text
     if activity is None:

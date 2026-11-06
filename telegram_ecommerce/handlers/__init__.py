@@ -11,6 +11,7 @@ from telegram_ecommerce.handlers.show_categories import show_categories
 from telegram_ecommerce.handlers.search import search
 from telegram_ecommerce.handlers.catalog_assistant import catalog_assistant
 from telegram_ecommerce.handlers.cart import cart
+from telegram_ecommerce.handlers.demo import demo_handlers
 from telegram_ecommerce.tamplates.rating import rating_precess_handlers
 from telegram_ecommerce.tamplates.buy_callbacks import (
     pre_checkout_handler,
@@ -59,5 +60,11 @@ all_public_commands_descriptions = [
         get_text("show_categories_description")
         )
     ]
+
+
+demo_public_commands_descriptions = [
+    BotCommand('start', 'Browse this store'),
+    BotCommand('search', 'Search this store'),
+]
 
 

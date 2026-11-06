@@ -8,6 +8,8 @@ services:
     environment:
       DB_HOST: db
       DB_PORT: 5432
+    volumes:
+      - ./data/demo_catalogs:/app/data/demo_catalogs:ro
     depends_on:
       db:
         condition: service_healthy

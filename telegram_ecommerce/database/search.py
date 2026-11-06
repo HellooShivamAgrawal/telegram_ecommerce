@@ -10,7 +10,7 @@ from unicodedata import category as unicode_category, normalize
 
 from sqlalchemy import and_, case, func, or_, select, text
 
-from telegram_ecommerce.database.models import Product, Session
+from telegram_ecommerce.database.models import DemoProduct, Product, Session
 
 
 MAX_SEARCH_LENGTH = 100
@@ -29,7 +29,7 @@ FIELD_WEIGHTS = {
 
 @dataclass(frozen=True)
 class SearchHit:
-    product: Product
+    product: Product | DemoProduct
     score: float
     match_kind: str
     matched_fields: tuple[str, ...]
@@ -86,33 +86,35 @@ def _strength(field, word, variants):
     return lexical, case(*branches, else_=0.0)
 
 
-def _candidate(word, variants):
+def _candidate(word, variants, model=Product):
     # These predicates can use the combined full-text/trigram indexes. The
     # stronger, field-specific checks below reject loose trigram candidates.
-    candidates = [_lexical(Product.search_text, word)]
+    candidates = [_lexical(model.search_text, word)]
     for variant in variants:
         if len(variant) >= MIN_PREFIX_LENGTH and variant.isalpha():
-            candidates.append(Product.search_text.contains(variant, autoescape=True))
+            candidates.append(model.search_text.contains(variant, autoescape=True))
     if len(word) >= MIN_FUZZY_LENGTH and word.isalpha():
-        candidates.append(Product.search_text.op('%>>')(word))
+        candidates.append(model.search_text.op('%>>')(word))
     return or_(*candidates)
 
 
-def _ranked_statement(phrase, terms, limit):
-    fields = {name: func.lower(func.coalesce(getattr(Product, name), ''))
-              for name in FIELD_WEIGHTS}
+def _ranked_statement(phrase, terms, limit, *, model=Product, weights=None, predicates=None):
+    weights = FIELD_WEIGHTS if weights is None else weights
+    predicates = (Product.quantity_in_stock > 0,) if predicates is None else predicates
+    fields = {name: func.lower(func.coalesce(getattr(model, name), ''))
+              for name in weights}
     signal_columns, candidates = [], []
     for index, (word, variants) in enumerate(terms):
         for name, field in fields.items():
             _, strength = _strength(field, word, variants)
             signal_columns.append(strength.label(f't{index}_{name}'))
-        candidates.append(_candidate(word, variants))
+        candidates.append(_candidate(word, variants, model))
     # Score each field once per candidate. Without materialization PostgreSQL
     # repeats costly text parsing for SELECT, coverage filters and ORDER BY.
     signals = (
-        select(Product.id.label('product_id'),
+        select(model.id.label('product_id'),
                (fields['name'] == phrase).label('exact_name'), *signal_columns)
-        .where(Product.quantity_in_stock > 0, *candidates)
+        .where(*predicates, *candidates)
         .cte('search_signals').prefix_with('MATERIALIZED')
     )
     contributions = {name: [] for name in fields}
@@ -122,7 +124,7 @@ def _ranked_statement(phrase, terms, limit):
         for name in fields:
             strength = signals.c[f't{index}_{name}']
             contributions[name].append(strength)
-            strengths.append(strength * FIELD_WEIGHTS[name])
+            strengths.append(strength * weights[name])
             lexical_fields.append(strength == 1.0)
         lexical_terms.append(or_(*lexical_fields))
         weighted = func.greatest(*strengths)
@@ -135,10 +137,10 @@ def _ranked_statement(phrase, terms, limit):
     matched = [func.greatest(*values).label(name + '_strength')
                for name, values in contributions.items()]
     return (
-        select(Product, all_lexical.label('all_lexical'), score.label('score'), *matched)
-        .join(signals, Product.id == signals.c.product_id)
+        select(model, all_lexical.label('all_lexical'), score.label('score'), *matched)
+        .join(signals, model.id == signals.c.product_id)
         .where(*coverage)
-        .order_by(exact_name.desc(), all_lexical.desc(), score.desc(), Product.id)
+        .order_by(exact_name.desc(), all_lexical.desc(), score.desc(), model.id)
         .limit(limit)
     )
 
@@ -151,6 +153,19 @@ def search_catalog(query, limit=10):
     Short model/size codes stay exact. Related hits remain available even when
     an exact result exists, and callers should show at most five weak options.
     """
+    return _search_catalog(query, limit)
+
+
+DEMO_FIELD_WEIGHTS = {'name': 10.0, 'brand': 6.0, 'category': 5.0, 'description': 1.0}
+
+
+def search_demo_catalog(query, brand, limit=50):
+    """Use shared relevance rules within one read-only merchant snapshot."""
+    return _search_catalog(query, limit, model=DemoProduct, weights=DEMO_FIELD_WEIGHTS,
+                           predicates=(DemoProduct.brand == brand,))
+
+
+def _search_catalog(query, limit, *, model=Product, weights=FIELD_WEIGHTS, predicates=None):
     if not isinstance(query, str) or len(query) > MAX_SEARCH_LENGTH or '\x00' in query:
         return SearchResult([])
     phrase = normalize('NFC', ' '.join(query.lower().split()))
@@ -171,11 +186,12 @@ def search_catalog(query, limit=10):
         # Transaction-local: never leak a threshold into pooled connections.
         session.execute(text("SELECT set_config('pg_trgm.strict_word_similarity_threshold', '0.49', true), "
                              "set_config('plan_cache_mode', 'force_custom_plan', true)"))
-        rows = session.execute(_ranked_statement(phrase, terms, limit)).all()
+        rows = session.execute(_ranked_statement(
+            phrase, terms, limit, model=model, weights=weights, predicates=predicates)).all()
         hits = [SearchHit(
             product=row[0], score=round(float(row[2]), 4),
             match_kind='exact' if row[1] else 'related',
-            matched_fields=tuple(name for name, strength in zip(FIELD_WEIGHTS, row[3:]) if strength > 0),
+            matched_fields=tuple(name for name, strength in zip(weights, row[3:]) if strength > 0),
         ) for row in rows]
         return SearchResult(hits, bool(hits) and hits[0].match_kind == 'related')
 

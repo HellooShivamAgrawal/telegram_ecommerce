@@ -30,6 +30,42 @@ class Photo(Base):
     image_blob = Column(LargeBinary)
 
 
+class DemoProduct(Base):
+    __tablename__ = 'demo_products'
+    __table_args__ = (
+        CheckConstraint('price IS NULL OR price >= 0', name='ck_demo_products_price_nonnegative'),
+    )
+
+    id = Column(Integer, primary_key=True)
+    brand = Column(String(40), nullable=False, index=True)
+    source_product_id = Column(String(160), nullable=False)
+    source_url = Column(Text, nullable=False)
+    name = Column(Text, nullable=False)
+    description = Column(Text)
+    category = Column(String(160), index=True)
+    price = Column(Numeric(12, 2))
+    mrp = Column(Numeric(12, 2))
+    available = Column(Boolean)
+    demo_image = Column(Text)
+    original_image = Column(Text)
+    details = Column(postgresql.JSONB, nullable=False)
+    search_text = Column(Text, Computed(
+        "lower(name || ' ' || brand || ' ' || coalesce(category, '') "
+        "|| ' ' || coalesce(description, ''))", persisted=True,
+    ), nullable=False)
+
+
+Index('uq_demo_products_brand_source', DemoProduct.brand, DemoProduct.source_product_id, unique=True)
+Index('ix_demo_products_brand_category', DemoProduct.brand, DemoProduct.category)
+Index('ix_demo_products_search_trgm', DemoProduct.search_text,
+      postgresql_using='gin', postgresql_ops={'search_text': 'gin_trgm_ops'})
+for dictionary in ('simple', 'english'):
+    Index(f'ix_demo_products_search_{dictionary}',
+          func.to_tsvector(text(f"'{dictionary}'"), DemoProduct.search_text),
+          postgresql_using='gin')
+
+
+
 class Category(Base):
     __tablename__ = 'category'
 
