@@ -88,6 +88,40 @@ class Order(Base):
     product = relationship('Product')
     user = relationship('Customer')
 
+
+class Cart(Base):
+    __tablename__ = 'carts'
+    __table_args__ = (
+        CheckConstraint('chat_id <> 0', name='ck_carts_chat_id_nonzero'),
+    )
+
+    chat_id = Column(BigInteger, primary_key=True, autoincrement=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class CartItem(Base):
+    __tablename__ = 'cart_items'
+    __table_args__ = (
+        CheckConstraint('quantity BETWEEN 1 AND 99', name='ck_cart_items_quantity'),
+    )
+
+    chat_id = Column(ForeignKey('carts.chat_id', ondelete='CASCADE'), primary_key=True)
+    product_id = Column(ForeignKey('products.id', ondelete='CASCADE'), primary_key=True, index=True)
+    quantity = Column(Integer, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class CartOperation(Base):
+    __tablename__ = 'cart_operations'
+
+    chat_id = Column(ForeignKey('carts.chat_id', ondelete='CASCADE'), primary_key=True)
+    request_id = Column(String(160), primary_key=True)
+    payload_fingerprint = Column(String(64), nullable=False)
+    result = Column(postgresql.JSONB, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
 db_url = (
     make_url(environ['DATABASE_URL'])
     if environ.get('DATABASE_URL')

@@ -11,12 +11,14 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import inspect, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get('TEST_DATABASE_URL'),
     reason='Set TEST_DATABASE_URL to an expendable PostgreSQL database',
 )
+os.environ.setdefault('BOT_TOKEN', 'test-token')
 
 
 @pytest.fixture(scope='module')
@@ -24,6 +26,8 @@ def database():
     os.environ['DATABASE_URL'] = os.environ['TEST_DATABASE_URL']
     from telegram_ecommerce.database.models import engine
 
+    if engine.url != make_url(os.environ['TEST_DATABASE_URL']):
+        raise RuntimeError('Test engine must use TEST_DATABASE_URL before models are imported.')
     command.upgrade(Config('alembic.ini'), 'head')
     yield engine
     engine.dispose()
@@ -32,7 +36,7 @@ def database():
 @pytest.fixture(autouse=True)
 def empty_tables(database):
     with database.begin() as connection:
-        connection.execute(text('TRUNCATE orders, products, category, photo, customers RESTART IDENTITY CASCADE'))
+        connection.execute(text('TRUNCATE cart_operations, cart_items, carts, orders, products, category, photo, customers RESTART IDENTITY CASCADE'))
 
 
 def test_migration_creates_search_index_and_payment_fields(database):
@@ -44,7 +48,7 @@ def test_migration_creates_search_index_and_payment_fields(database):
     assert columns['status']['nullable'] is False
     assert 'paid_at' in columns
     with database.connect() as connection:
-        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '8e7b9b86f86c'
+        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '14b8c5f7a2d1'
 
 
 def test_search_only_returns_available_products_and_respects_limit(database):
