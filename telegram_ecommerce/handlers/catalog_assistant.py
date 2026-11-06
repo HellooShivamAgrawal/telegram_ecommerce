@@ -1,13 +1,18 @@
 """Shopping assistant with chat-scoped context and real activity updates."""
 
 import time
+from types import SimpleNamespace
 
 from telegram.ext import MessageHandler, filters
 
-from telegram_ecommerce.agent.catalog import CartActionRejectedError, CartUpdatedResponseError, answer_catalog_question
+from telegram_ecommerce.agent.catalog import (
+    CartActionRejectedError, CartUpdatedResponseError, ProductSelectionRequired,
+    answer_catalog_question,
+)
 from telegram_ecommerce.agent.progress import ActivityMessage
 from telegram_ecommerce.language import get_text
 from telegram_ecommerce.utils.log import logger
+from telegram_ecommerce.handlers.search import PRODUCT_SELECTION_KEY, show_search_choices
 
 
 HISTORY_KEY = "shopping_history"
@@ -19,7 +24,14 @@ def _history(chat_data, now):
     if now - chat_data.get(HISTORY_TIME_KEY, 0) > HISTORY_TTL:
         chat_data.pop(HISTORY_KEY, None)
     history = chat_data.get(HISTORY_KEY, [])
-    return [dict(item) for item in history[-6:]]
+    history = [dict(item) for item in history[-6:]]
+    selection = chat_data.get(PRODUCT_SELECTION_KEY)
+    if selection and now - selection['selected_at'] > HISTORY_TTL:
+        chat_data.pop(PRODUCT_SELECTION_KEY, None)
+    elif selection and selection['selected_at'] > chat_data.get(HISTORY_TIME_KEY, 0):
+        history.append({'role': 'assistant', 'content':
+                        f"Product opened by the shopper: {selection['name']} (ID {selection['id']})."})
+    return history[-6:]
 
 
 async def answer_message(update, context):
@@ -38,6 +50,13 @@ async def answer_message(update, context):
             on_progress=activity.update,
             history=history,
         )
+    except ProductSelectionRequired as selection:
+        await show_search_choices(
+            update, context, [SimpleNamespace(**product) for product in selection.products],
+            activity=activity,
+            notice=get_text('assistant_cart_partial', context) if selection.saved else None,
+        )
+        return
     except CartUpdatedResponseError:
         answer = get_text("assistant_cart_saved", context)
     except CartActionRejectedError as error:

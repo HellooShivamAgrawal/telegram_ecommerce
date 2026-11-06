@@ -62,7 +62,7 @@ def _choice_label(product):
     return name[:max(1, 64 - len(price))] + price
 
 
-async def show_search_choices(update, context, products):
+async def show_search_choices(update, context, products, *, activity=None, notice=None):
     """Offer a small set of related products without selecting or buying one."""
     products = list({product.id: product for product in products}.values())[:5]
     if not products:
@@ -74,9 +74,16 @@ async def show_search_choices(update, context, products):
         [InlineKeyboardButton(_choice_label(product), callback_data=callback)]
         for product, callback in zip(products, options)
     ])
-    message = await update.effective_message.reply_text(
-        get_text("search_closest_matches", context), reply_markup=markup,
-    )
+    text = get_text("search_closest_matches", context)
+    if notice:
+        text = notice + '\n\n' + text
+    if activity is None:
+        message = await update.effective_message.reply_text(text, reply_markup=markup)
+    else:
+        if not await activity.finish(text, reply_markup=markup):
+            context.user_data.pop(SEARCH_CHOICES_KEY, None)
+            return END
+        message = activity.message
     context.user_data[SEARCH_CHOICES_KEY] = {
         "chat_id": update.effective_chat.id,
         "message_id": message.message_id,

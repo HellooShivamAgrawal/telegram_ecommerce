@@ -131,20 +131,30 @@ class ActivityMessage:
         logger.warning("Final answer delivery exhausted its retry budget")
         return False, False
 
-    async def finish(self, text):
+    async def finish(self, text, *, reply_markup=None):
         """Return whether the final answer was delivered, without repeating any tool."""
-        if text == self.last_text:
+        if text == self.last_text and reply_markup is None:
             return True
+        def delivery(callback):
+            if reply_markup is None:
+                return callback
+
+            async def with_markup(value):
+                message = await callback(value, reply_markup=reply_markup)
+                if getattr(message, 'message_id', None) is not None:
+                    self.message = message
+            return with_markup
+
         budget = _DeliveryBudget()
         if self.message is not None:
-            delivered, may_fallback = await self._deliver(self.message.edit_text, text, budget)
+            delivered, may_fallback = await self._deliver(delivery(self.message.edit_text), text, budget)
             if delivered:
                 self.last_text = text
                 return True
             if not may_fallback:
                 # A new reply would hit the same rate limit; preserve its deadline.
                 return False
-        delivered, _ = await self._deliver(self.source.reply_text, text, budget)
+        delivered, _ = await self._deliver(delivery(self.source.reply_text), text, budget)
         if delivered:
             self.last_text = text
         return delivered

@@ -67,7 +67,9 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         for handler in all_handlers:
             app.add_handler(handler)
         product = SimpleNamespace(id=7, name="Notebook", price="9.99", image_id=None)
-        with patch.object(search_handler, "search_products", return_value=[product]), patch.object(
+        with patch.object(search_handler, "search_catalog", return_value=SimpleNamespace(
+            hits=[SimpleNamespace(product=product)], suggestions_only=False,
+        )), patch.object(
             assistant_handler, "answer_catalog_question",
             new_callable=AsyncMock, return_value="Added two notebooks.",
         ) as assistant:
