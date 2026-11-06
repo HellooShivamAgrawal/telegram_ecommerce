@@ -26,7 +26,9 @@ Sellers can add, delete, and manage them.
 The following are instructions on how to use this bot:
 
 - Type /show_categories to see products by category.
-- To search for something, you can use the command /search.
+- To search for something, use /search. The same backend powers chat search,
+  with ranked names/descriptions, plural matching, and a conservative typo
+  fallback. See [catalog search](docs/catalog-search.md).
 - Each chat has a persistent cart. Use `/cart` to view it and `/cart help` for
   add, set quantity, remove, and clear commands. Group members share one cart.
 - To shop in ordinary chat, configure `OPENAI_API_KEY`; the assistant can find
