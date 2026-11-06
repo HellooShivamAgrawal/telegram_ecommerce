@@ -50,6 +50,12 @@ the historical receipt. Do not purge receipts while requests can still retry.
 Tools list categories, search products, inspect products, read the cart, add
 items, set quantities, remove items, and clear the cart. Product IDs used for
 changes must have appeared in a catalog/cart tool result during that turn.
+The [shared ranked search](catalog-search.md) includes names, brand, tags and
+descriptions, with partial-name and typo matching. When only related matches
+exist, the assistant shows up to five product buttons immediately. Selecting
+one opens details and provides short-lived chat context for follow-ups; it does
+not authorize a cart change. A related search result cannot be written to the
+cart merely because the model inspected it.
 A separate, cached-per-turn intent check reads only the current user message,
 without catalog text or conversation history, before any write. Its strict
 structured output limits which cart operations can run. It is an additional

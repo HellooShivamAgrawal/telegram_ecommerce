@@ -113,7 +113,10 @@ def test_connection_threshold_is_unchanged_after_search(add_products, database):
     from sqlalchemy import text
     add_products({'name': 'Notebook'})
     with database.connect() as connection:
-        before = connection.scalar(text('SHOW pg_trgm.word_similarity_threshold'))
+        before = (connection.scalar(text('SHOW pg_trgm.strict_word_similarity_threshold')),
+                  connection.scalar(text('SHOW plan_cache_mode')))
     search('notebok')
     with database.connect() as connection:
-        assert connection.scalar(text('SHOW pg_trgm.word_similarity_threshold')) == before
+        after = (connection.scalar(text('SHOW pg_trgm.strict_word_similarity_threshold')),
+                 connection.scalar(text('SHOW plan_cache_mode')))
+        assert after == before

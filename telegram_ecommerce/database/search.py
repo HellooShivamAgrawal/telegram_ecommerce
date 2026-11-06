@@ -94,36 +94,50 @@ def _candidate(word, variants):
         if len(variant) >= MIN_PREFIX_LENGTH and variant.isalpha():
             candidates.append(Product.search_text.contains(variant, autoescape=True))
     if len(word) >= MIN_FUZZY_LENGTH and word.isalpha():
-        candidates.append(Product.search_text.op('%>')(word))
+        candidates.append(Product.search_text.op('%>>')(word))
     return or_(*candidates)
 
 
 def _ranked_statement(phrase, terms, limit):
     fields = {name: func.lower(func.coalesce(getattr(Product, name), ''))
               for name in FIELD_WEIGHTS}
-    contributions = {name: [] for name in fields}
-    lexical_terms, coverage, weighted_terms, candidates = [], [], [], []
-    for word, variants in terms:
-        lexical_fields, strengths = [], []
+    signal_columns, candidates = [], []
+    for index, (word, variants) in enumerate(terms):
         for name, field in fields.items():
-            lexical, strength = _strength(field, word, variants)
-            lexical_fields.append(lexical)
-            strengths.append(strength * FIELD_WEIGHTS[name])
+            _, strength = _strength(field, word, variants)
+            signal_columns.append(strength.label(f't{index}_{name}'))
+        candidates.append(_candidate(word, variants))
+    # Score each field once per candidate. Without materialization PostgreSQL
+    # repeats costly text parsing for SELECT, coverage filters and ORDER BY.
+    signals = (
+        select(Product.id.label('product_id'),
+               (fields['name'] == phrase).label('exact_name'), *signal_columns)
+        .where(Product.quantity_in_stock > 0, *candidates)
+        .cte('search_signals').prefix_with('MATERIALIZED')
+    )
+    contributions = {name: [] for name in fields}
+    lexical_terms, coverage, weighted_terms = [], [], []
+    for index in range(len(terms)):
+        strengths, lexical_fields = [], []
+        for name in fields:
+            strength = signals.c[f't{index}_{name}']
             contributions[name].append(strength)
+            strengths.append(strength * FIELD_WEIGHTS[name])
+            lexical_fields.append(strength == 1.0)
         lexical_terms.append(or_(*lexical_fields))
         weighted = func.greatest(*strengths)
         coverage.append(weighted > 0)
         weighted_terms.append(weighted)
-        candidates.append(_candidate(word, variants))
 
     all_lexical = and_(*lexical_terms)
-    exact_name = fields['name'] == phrase
+    exact_name = signals.c.exact_name
     score = sum(weighted_terms) + case((exact_name, 40.0), else_=0.0)
     matched = [func.greatest(*values).label(name + '_strength')
                for name, values in contributions.items()]
     return (
         select(Product, all_lexical.label('all_lexical'), score.label('score'), *matched)
-        .where(Product.quantity_in_stock > 0, *candidates, *coverage)
+        .join(signals, Product.id == signals.c.product_id)
+        .where(*coverage)
         .order_by(exact_name.desc(), all_lexical.desc(), score.desc(), Product.id)
         .limit(limit)
     )
@@ -155,7 +169,8 @@ def search_catalog(query, limit=10):
         for word, variants in zip(words, stems):
             terms.append((word, tuple(dict.fromkeys([word, *(variants or [])]))))
         # Transaction-local: never leak a threshold into pooled connections.
-        session.execute(text("SET LOCAL pg_trgm.word_similarity_threshold = 0.45"))
+        session.execute(text("SELECT set_config('pg_trgm.strict_word_similarity_threshold', '0.49', true), "
+                             "set_config('plan_cache_mode', 'force_custom_plan', true)"))
         rows = session.execute(_ranked_statement(phrase, terms, limit)).all()
         hits = [SearchHit(
             product=row[0], score=round(float(row[2]), 4),

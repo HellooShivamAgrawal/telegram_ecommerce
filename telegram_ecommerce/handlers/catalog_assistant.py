@@ -41,6 +41,7 @@ async def answer_message(update, context):
         return
     now = time.time()
     history = _history(context.chat_data, now)
+    selected = context.chat_data.get(PRODUCT_SELECTION_KEY)
     activity = await ActivityMessage(message, context).start()
     try:
         answer = await answer_catalog_question(
@@ -49,6 +50,7 @@ async def answer_message(update, context):
             request_id=f"telegram:{update.update_id}",
             on_progress=activity.update,
             history=history,
+            selected_product_id=selected['id'] if selected else None,
         )
     except ProductSelectionRequired as selection:
         await show_search_choices(

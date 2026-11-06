@@ -95,6 +95,16 @@ class FinalDeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(self.sleeps[0], 2.1)
         self.assertEqual(source.reply_text.await_count, 2)
 
+    async def test_choice_markup_fallback_tracks_the_actual_delivered_message(self):
+        status = SimpleNamespace(message_id=1, edit_text=AsyncMock(side_effect=BadRequest('message deleted')))
+        replacement = SimpleNamespace(message_id=2)
+        source = SimpleNamespace(reply_text=AsyncMock(side_effect=[status, replacement]))
+        activity, _ = await self.activity(status, source)
+        markup = object()
+        self.assertTrue(await activity.finish('Closest matches', reply_markup=markup))
+        self.assertIs(activity.message, replacement)
+        source.reply_text.assert_awaited_with('Closest matches', reply_markup=markup)
+
 
 if __name__ == "__main__":
     unittest.main()
