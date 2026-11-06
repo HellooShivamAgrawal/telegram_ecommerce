@@ -1,5 +1,6 @@
 """Weak search matches offer explicit choices before the existing checkout flow."""
 
+import asyncio
 import importlib
 import json
 import os
@@ -43,9 +44,84 @@ def update(*, chat_id=700, message_id=100, data=None):
 
 
 class SearchChoiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_same_user_keeps_independent_choices_and_selections_in_two_chats(self):
+        shared_user_data = {}
+        first_ctx = SimpleNamespace(user_data=shared_user_data, chat_data={})
+        second_ctx = SimpleNamespace(user_data=shared_user_data, chat_data={})
+        first, second = update(chat_id=700), update(chat_id=701)
+        first_product, second_product = product(7, "Notebook"), product(8, "Pen")
+        await asyncio.gather(
+            search.show_search_choices(first, first_ctx, [first_product]),
+            search.show_search_choices(second, second_ctx, [second_product]),
+        )
+        buckets = shared_user_data[search.SEARCH_CHATS_KEY]
+        self.assertEqual(buckets[700][search.SEARCH_CHOICES_KEY]["options"], {"search_choice:7": 7})
+        self.assertEqual(buckets[701][search.SEARCH_CHOICES_KEY]["options"], {"search_choice:8": 8})
+        # Message IDs may coincide across chats; membership must still be local.
+        with patch.object(search, "get_available_product") as lookup:
+            self.assertIsNone(await search.choose_search_product(update(chat_id=700, data="search_choice:8"), first_ctx))
+            self.assertIsNone(await search.choose_search_product(update(chat_id=701, data="search_choice:7"), second_ctx))
+        lookup.assert_not_called()
+        available = {7: first_product, 8: second_product}
+        with patch.object(search, "get_available_product", side_effect=available.get), patch.object(
+            search, "send_a_detailed_product", new_callable=AsyncMock,
+        ):
+            states = await asyncio.gather(
+                search.choose_search_product(update(chat_id=700, data="search_choice:7"), first_ctx),
+                search.choose_search_product(update(chat_id=701, data="search_choice:8"), second_ctx),
+            )
+        self.assertEqual(states, [search.BUY_PROCESS, search.BUY_PROCESS])
+        self.assertEqual(buckets[700][search.products_data_key]["products"].actual().id, 7)
+        self.assertEqual(buckets[701][search.products_data_key]["products"].actual().id, 8)
+        self.assertEqual(first_ctx.chat_data[search.PRODUCT_SELECTION_KEY]["id"], 7)
+        self.assertEqual(second_ctx.chat_data[search.PRODUCT_SELECTION_KEY]["id"], 8)
+
+    async def test_navigation_checkout_restart_and_cancel_only_affect_current_chat(self):
+        unrelated_flow = {"products": "another browsing flow"}
+        shared_user_data = {search.products_data_key: unrelated_flow}
+        first_ctx = SimpleNamespace(user_data=shared_user_data, chat_data={})
+        second_ctx = SimpleNamespace(user_data=shared_user_data, chat_data={})
+        first, second = update(chat_id=700), update(chat_id=701)
+        first_products = [product(7), product(8)]
+        second_products = [product(9), product(10)]
+        await search.ask_for_term_to_search(first, first_ctx)
+        await search.ask_for_term_to_search(second, second_ctx)
+        with patch.object(search, "search_catalog", side_effect=[result(first_products, False), result(second_products, False)]), patch.object(
+            search, "send_product_card", new_callable=AsyncMock,
+        ):
+            await search.get_list_of_products_that_match(first, first_ctx)
+            await search.get_list_of_products_that_match(second, second_ctx)
+        buckets = shared_user_data[search.SEARCH_CHATS_KEY]
+        with patch.object(search, "send_a_product", new_callable=AsyncMock) as card, patch.object(
+            search, "send_a_detailed_product", new_callable=AsyncMock,
+        ) as details:
+            await search.catch_next(first, first_ctx)
+            self.assertEqual(card.await_args.args[2].id, 8)
+            self.assertEqual(buckets[701][search.products_data_key]["products"].actual().id, 9)
+            await search.catch_previus(first, first_ctx)
+            self.assertEqual(card.await_args.args[2].id, 7)
+            await search.catch_details(second, second_ctx)
+            self.assertEqual(details.await_args.args[2].id, 9)
+        with patch("telegram_ecommerce.filters.decorators.user_exist", return_value=True), patch.object(
+            search, "send_a_shipping_message", new_callable=AsyncMock,
+        ) as checkout:
+            await search.send_a_shipping_message_callback(first, first_ctx)
+            await search.send_a_shipping_message_callback(second, second_ctx)
+        self.assertEqual([call.args[2].id for call in checkout.await_args_list], [7, 9])
+        await search.show_search_choices(first, first_ctx, first_products)
+        await search.show_search_choices(second, second_ctx, second_products)
+        await search.cancel_search(first, first_ctx)
+        self.assertNotIn(700, buckets)
+        self.assertIn(search.SEARCH_CHOICES_KEY, buckets[701])
+        self.assertEqual(buckets[701][search.products_data_key]["products"].actual().id, 9)
+        await search.ask_for_term_to_search(first, first_ctx)
+        self.assertIn(search.SEARCH_CHOICES_KEY, buckets[701])
+        self.assertEqual(buckets[701][search.products_data_key]["products"].actual().id, 9)
+        self.assertIs(shared_user_data[search.products_data_key], unrelated_flow)
+
     async def test_related_results_show_five_named_choices_without_selecting(self):
         event, ctx = update(), context()
-        search.put_products_data_in_user_data(ctx.user_data)
+        search.put_products_data_in_user_data(event, ctx)
         products = [product(index, f"Notebook {index}") for index in range(1, 8)]
         with patch.object(search, "search_catalog", return_value=result(products, True)) as lookup, patch.object(
             search, "send_product_card", new_callable=AsyncMock,
@@ -60,11 +136,11 @@ class SearchChoiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(buttons), 5)
         self.assertEqual(buttons[0][0].text, "Notebook 1 · USD 9.99")
         self.assertEqual(buttons[-1][0].callback_data, "search_choice:5")
-        self.assertEqual(ctx.user_data[search.SEARCH_CHOICES_KEY]["message_id"], 100)
+        self.assertEqual(ctx.user_data[search.SEARCH_CHATS_KEY][700][search.SEARCH_CHOICES_KEY]["message_id"], 100)
 
     async def test_exact_search_keeps_existing_product_list_navigation(self):
         event, ctx = update(), context()
-        search.put_products_data_in_user_data(ctx.user_data)
+        search.put_products_data_in_user_data(event, ctx)
         products = [product(7), product(8, "Sketchbook")]
         with patch.object(search, "search_catalog", return_value=result(products, False)), patch.object(
             search, "send_product_card", new_callable=AsyncMock,
@@ -74,11 +150,11 @@ class SearchChoiceTests(unittest.IsolatedAsyncioTestCase):
             await search.catch_next(event, ctx)
         self.assertEqual(state, search.SHOW_LIST_OF_PRODUCT_THAT_MATCH)
         self.assertEqual(next_card.await_args.args[2], products[1])
-        self.assertNotIn(search.SEARCH_CHOICES_KEY, ctx.user_data)
+        self.assertNotIn(search.SEARCH_CHOICES_KEY, ctx.user_data.get(search.SEARCH_CHATS_KEY, {}).get(700, {}))
 
     async def test_no_results_keep_existing_empty_search_response(self):
         event, ctx = update(), context()
-        search.put_products_data_in_user_data(ctx.user_data)
+        search.put_products_data_in_user_data(event, ctx)
         with patch.object(search, "search_catalog", return_value=result([], False)):
             self.assertEqual(await search.get_list_of_products_that_match(event, ctx), search.END)
         self.assertIn("no products", event.message.reply_text.await_args_list[0].args[0])
@@ -98,8 +174,8 @@ class SearchChoiceTests(unittest.IsolatedAsyncioTestCase):
         details.assert_awaited_once_with(selected, ctx, refreshed, search.pattern_identifier)
         checkout.assert_not_awaited()
         self.assertEqual(state, search.BUY_PROCESS)
-        self.assertIs(ctx.user_data[search.products_data_key]["products"].actual(), refreshed)
-        self.assertNotIn(search.SEARCH_CHOICES_KEY, ctx.user_data)
+        self.assertIs(ctx.user_data[search.SEARCH_CHATS_KEY][700][search.products_data_key]["products"].actual(), refreshed)
+        self.assertNotIn(search.SEARCH_CHOICES_KEY, ctx.user_data.get(search.SEARCH_CHATS_KEY, {}).get(700, {}))
         self.assertEqual(ctx.chat_data[search.PRODUCT_SELECTION_KEY],
                          {"id": 7, "name": "Updated notebook", "selected_at": 1000.0})
 
@@ -130,7 +206,7 @@ class SearchChoiceTests(unittest.IsolatedAsyncioTestCase):
         ) as details:
             self.assertIsNone(await search.choose_search_product(selected, ctx))
         details.assert_not_awaited()
-        self.assertIn("search_choice:8", ctx.user_data[search.SEARCH_CHOICES_KEY]["options"])
+        self.assertIn("search_choice:8", ctx.user_data[search.SEARCH_CHATS_KEY][700][search.SEARCH_CHOICES_KEY]["options"])
         self.assertIn("no longer available", selected.callback_query.answer.await_args.args[0])
         self.assertNotIn(search.PRODUCT_SELECTION_KEY, ctx.chat_data)
 
@@ -139,7 +215,7 @@ class SearchChoiceTests(unittest.IsolatedAsyncioTestCase):
             ctx = context()
             await search.show_search_choices(update(), ctx, [product(7)])
             await callback(update(), ctx)
-            self.assertNotIn(search.SEARCH_CHOICES_KEY, ctx.user_data)
+            self.assertNotIn(search.SEARCH_CHOICES_KEY, ctx.user_data.get(search.SEARCH_CHATS_KEY, {}).get(700, {}))
 
     async def test_helper_accepts_lightweight_products_and_localizes_plain_short_labels(self):
         event, ctx = update(), context()
