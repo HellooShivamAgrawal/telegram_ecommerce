@@ -312,6 +312,8 @@ async def _answer(message, *, client, model, intent_model, chat_id, request_id, 
                             completed_writes[signature] = result
                             if product_id is not None:
                                 touched_products.add(product_id)
+                            # The database transaction has returned successfully.
+                            await _notify(on_progress, "cart_saved", {}, names)
                     _remember_products(result, names)
                 except (ValueError, json.JSONDecodeError) as exc:
                     if call.name in MUTATIONS:

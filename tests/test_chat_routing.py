@@ -1,5 +1,6 @@
 """Exercise Telegram's actual handler selection without Telegram network calls."""
 
+import asyncio
 import importlib
 import json
 import os
@@ -25,6 +26,7 @@ assistant_handler = importlib.import_module("telegram_ecommerce.handlers.catalog
 class TelegramStub(BaseRequest):
     def __init__(self):
         self.messages = []
+        self.actions = []
 
     async def initialize(self):
         pass
@@ -37,6 +39,9 @@ class TelegramStub(BaseRequest):
         bot = {"id": 123, "is_bot": True, "first_name": "Test", "username": "TestBot"}
         if endpoint == "getMe":
             result = bot
+        elif endpoint == "sendChatAction":
+            self.actions.append(request_data.parameters["action"])
+            result = True
         elif endpoint in {"sendMessage", "editMessageText"}:
             params = request_data.parameters
             self.messages.append(params["text"])
@@ -67,9 +72,14 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         for handler in all_handlers:
             app.add_handler(handler)
         product = SimpleNamespace(id=7, name="Notebook", price="9.99", image_id=None)
+
+        async def answer(*args, **kwargs):
+            await asyncio.sleep(0)
+            return "Added two notebooks."
+
         with patch.object(search_handler, "search_products", return_value=[product]), patch.object(
             assistant_handler, "answer_catalog_question",
-            new_callable=AsyncMock, return_value="Added two notebooks.",
+            new_callable=AsyncMock, side_effect=answer,
         ) as assistant:
             async with app:
                 await app.process_update(inbound(app.bot, "/search", 101, 7001))
@@ -78,6 +88,7 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         assistant.assert_awaited_once()
         self.assertEqual(assistant.await_args.kwargs["chat_id"], 7001)
         self.assertIn("Added two notebooks.", transport.messages)
+        self.assertEqual(transport.actions, ["typing"])
 
     async def test_cart_command_is_available_while_search_waits_for_input(self):
         transport = TelegramStub()

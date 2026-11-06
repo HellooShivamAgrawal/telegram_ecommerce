@@ -107,6 +107,8 @@ class CatalogAgentTests(unittest.IsolatedAsyncioTestCase):
         self.intent.assert_awaited_once()
         self.assertEqual(events[0]["arguments"], {"query": "notebook"})
         self.assertEqual(events[1]["product_name"], "Notebook")
+        self.assertEqual([event["name"] for event in events],
+                         ["search_products", "add_to_cart", "cart_saved"])
 
     async def test_progress_failure_does_not_abort_the_tool(self):
         responses = FakeResponses([
@@ -122,10 +124,40 @@ class CatalogAgentTests(unittest.IsolatedAsyncioTestCase):
         responses = FakeResponses([
             fake_response("r1", [call("clear_cart", {})]), RuntimeError("API unavailable"),
         ])
-        with patch("telegram_ecommerce.agent.catalog.execute_tool", return_value={"cart": {"items": []}}):
+        committed = False
+        events = []
+
+        def commit(*args, **kwargs):
+            nonlocal committed
+            self.assertEqual(events, ["clear_cart"])
+            committed = True
+            return {"cart": {"items": []}}
+
+        async def progress(event):
+            if event["name"] == "cart_saved":
+                self.assertTrue(committed)
+            events.append(event["name"])
+
+        with patch("telegram_ecommerce.agent.catalog.execute_tool", side_effect=commit):
             with self.assertRaises(CartUpdatedResponseError):
                 await answer_catalog_question("Clear my cart", chat_id=42, request_id="telegram:11",
+                                              on_progress=progress,
                                               client=SimpleNamespace(responses=responses))
+        self.assertEqual(events, ["clear_cart", "cart_saved"])
+
+    async def test_saved_feedback_failure_does_not_repeat_a_write(self):
+        responses = FakeResponses([
+            fake_response("r1", [call("clear_cart", {})]), fake_response("r2", [], "Cart cleared."),
+        ])
+        progress = AsyncMock(side_effect=RuntimeError("Activity delivery unavailable"))
+        with patch("telegram_ecommerce.agent.catalog.execute_tool", return_value={"cart": {"items": []}}) as tool:
+            answer = await answer_catalog_question("Clear my cart", chat_id=42, request_id="telegram:19",
+                                                  on_progress=progress,
+                                                  client=SimpleNamespace(responses=responses))
+        self.assertEqual(answer, "Cart cleared.")
+        tool.assert_called_once()
+        self.assertEqual([call.args[0]["name"] for call in progress.await_args_list],
+                         ["clear_cart", "cart_saved"])
 
     async def test_guessed_product_id_cannot_be_written(self):
         responses = FakeResponses([
@@ -189,15 +221,18 @@ class CatalogAgentTests(unittest.IsolatedAsyncioTestCase):
             fake_response("r2", [call("add_to_cart", {"product_id": 7, "quantity": 5})]),
             fake_response("r3", [], "Added five notebooks."),
         ])
+        progress = AsyncMock()
         with patch("telegram_ecommerce.agent.catalog.execute_tool", side_effect=[
             {"products": [{"id": 7, "name": "Notebook"}]},
             {"error": "Not enough stock", "code": "insufficient_stock"},
         ]), self.assertRaises(CartActionRejectedError) as rejected:
             await answer_catalog_question("Add five notebooks", chat_id=42,
-                                          request_id="telegram:16", client=SimpleNamespace(responses=responses))
+                                          request_id="telegram:16", on_progress=progress,
+                                          client=SimpleNamespace(responses=responses))
         self.assertEqual(rejected.exception.code, "insufficient_stock")
         self.assertFalse(rejected.exception.saved)
         self.assertEqual(len(responses.requests), 2)
+        self.assertNotIn("cart_saved", [call.args[0]["name"] for call in progress.await_args_list])
 
     async def test_partial_failure_reports_previous_committed_change(self):
         responses = FakeResponses([

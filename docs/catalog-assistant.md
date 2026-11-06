@@ -61,9 +61,14 @@ If earlier writes succeeded, the reply explicitly says the request was partial.
 
 One Telegram message starts as "Thinking…", then shows activity from real tool
 dispatches: "Finding notebook…", "Opening your cart…", "Adding Demo Notebook
-to your cart…", and so on. The final answer replaces that message. These are
+to your cart…", and so on. Once a cart transaction succeeds, it can show
+"Cart change saved. Preparing your reply…" while the answer is generated.
+Telegram's native typing indicator refreshes every four seconds during work
+and stops before final delivery, including on errors or cancellation.
+The final answer replaces the activity message. These are
 activity summaries, not private model reasoning. Rapid updates are coalesced;
-Telegram rate limits are respected. Final delivery uses at most four attempts
+the saved transition can wait up to 0.8 seconds for the edit interval. All
+activity respects Telegram rate limits. Final delivery uses at most four attempts
 and ten seconds of rate-limit waiting. Delivery failures never replay a mutation.
 If Telegram stays unavailable, the answer may not arrive; `/cart` shows saved state.
 
@@ -86,7 +91,8 @@ Run `python -m pytest -q` with `TEST_DATABASE_URL` pointing at a **dedicated tes
 database**; PostgreSQL tests reset its schema/data. Never point it at a live DB.
 Tests cover isolation, concurrent increments, duplicate delivery, transaction
 rollback, fresh replay views, failed writes/replies, intent isolation, Telegram
-rate limits, and real handler routing using a fake Telegram transport.
+rate limits, typing-task cleanup, post-commit feedback, and real handler routing
+using a fake Telegram transport.
 
 For a live check, seed the local demo catalog with
 `python -m telegram_ecommerce.database.seed_demo`. Ask to add two Demo Notebooks,

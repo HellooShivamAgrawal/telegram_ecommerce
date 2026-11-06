@@ -3,16 +3,19 @@
 import asyncio
 import time
 import unicodedata
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import timedelta
 
 from telegram.error import RetryAfter, TelegramError
+from telegram.constants import ChatAction
 
 from telegram_ecommerce.language import get_text
 from telegram_ecommerce.utils.log import logger
 
 
 MIN_EDIT_INTERVAL = 0.8
+TYPING_INTERVAL = 4.0
 MAX_FINAL_ATTEMPTS = 4
 MAX_FINAL_WAIT_SECONDS = 10.0
 
@@ -46,6 +49,8 @@ def progress_text(event, context):
                 if product else get_text("activity_checking", context))
     if name == "get_cart":
         return get_text("activity_cart", context)
+    if name == "cart_saved":
+        return get_text("activity_cart_saved", context)
     if name == "clear_cart":
         return get_text("activity_clearing_cart", context)
     keys = {
@@ -81,6 +86,35 @@ class ActivityMessage:
             self.blocked_until, self.clock() + max(0.0, _retry_seconds(error)),
         )
 
+    async def _typing(self):
+        while True:
+            blocked_for = self.blocked_until - self.clock()
+            if blocked_for > 0:
+                await asyncio.sleep(blocked_for)
+                continue  # A status edit may have extended the shared deadline.
+            delay = TYPING_INTERVAL
+            try:
+                await self.source.reply_chat_action(ChatAction.TYPING)
+            except RetryAfter as error:
+                self._record_retry_after(error)
+                delay = max(delay, _retry_seconds(error))
+            except Exception as error:
+                # Optional activity must never interfere with shopping or delivery.
+                logger.warning("Could not send typing indicator (%s)", type(error).__name__)
+                return
+            await asyncio.sleep(delay)
+
+    @asynccontextmanager
+    async def typing(self):
+        """Keep Telegram's native activity alive only while work is pending."""
+        task = asyncio.create_task(self._typing())
+        try:
+            yield
+        finally:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
     async def start(self):
         text = get_text("activity_thinking", self.context)
         try:
@@ -97,8 +131,16 @@ class ActivityMessage:
         now = self.clock()
         if not text or self.message is None or text == self.last_text or now < self.blocked_until:
             return
-        if self.last_progress_at is not None and now - self.last_progress_at < MIN_EDIT_INTERVAL:
-            return
+        if self.last_progress_at is not None:
+            remaining = MIN_EDIT_INTERVAL - (now - self.last_progress_at)
+            if remaining > 0:
+                if event.get("name") != "cart_saved":
+                    return
+                # A confirmed save deserves a visible transition, without a queue.
+                await asyncio.sleep(min(remaining, MIN_EDIT_INTERVAL))
+                now = self.clock()
+                if now < self.blocked_until:
+                    return
         self.last_progress_at = now
         try:
             await self.message.edit_text(text)
