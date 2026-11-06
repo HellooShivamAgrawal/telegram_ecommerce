@@ -4,7 +4,7 @@ import time
 
 from telegram.ext import MessageHandler, filters
 
-from telegram_ecommerce.agent.catalog import CartUpdatedResponseError, answer_catalog_question
+from telegram_ecommerce.agent.catalog import CartActionRejectedError, CartUpdatedResponseError, answer_catalog_question
 from telegram_ecommerce.agent.progress import ActivityMessage
 from telegram_ecommerce.language import get_text
 from telegram_ecommerce.utils.log import logger
@@ -40,6 +40,17 @@ async def answer_message(update, context):
         )
     except CartUpdatedResponseError:
         answer = get_text("assistant_cart_saved", context)
+    except CartActionRejectedError as error:
+        if error.saved:
+            key = "assistant_cart_partial"
+        else:
+            key = {
+                "insufficient_stock": "cart_insufficient_stock",
+                "product_not_found": "cart_product_not_found",
+                "quantity_limit": "cart_invalid_quantity",
+                "cart_full": "cart_full",
+            }.get(error.code, "assistant_cart_rejected")
+        answer = get_text(key, context)
     except Exception as error:
         logger.warning("Shopping assistant failed (%s)", type(error).__name__)
         answer = get_text("catalog_assistant_unavailable", context)
@@ -49,7 +60,8 @@ async def answer_message(update, context):
             {"role": "assistant", "content": answer},
         ])[-6:]
         context.chat_data[HISTORY_TIME_KEY] = now
-    await activity.finish(answer)
+    if await activity.finish(answer) is False:
+        logger.warning("Shopping reply delivery failed for update %s; no operations retried", update.update_id)
 
 
 catalog_assistant = MessageHandler(filters.TEXT & ~filters.COMMAND, answer_message)

@@ -81,7 +81,8 @@ async def cart_command(update, context):
                 cart_service.mutate_cart, chat_id, operation,
                 request_id=f"command:{update.update_id}", **arguments,
             )
-            snapshot = receipt["cart"]
+            snapshot = (await asyncio.to_thread(cart_service.get_cart, chat_id)
+                        if receipt.get("replayed") else receipt["cart"])
     except cart_service.CartError as error:
         await message.reply_text(get_text(ERROR_KEYS.get(error.code, "cart_error"), context))
         return

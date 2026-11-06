@@ -125,9 +125,6 @@ search = ConversationHandler(
                 get_list_of_products_that_match)
             ],
         SHOW_LIST_OF_PRODUCT_THAT_MATCH : [
-            MessageHandler(
-                filters.TEXT, 
-                show_list_of_product_that_match),
             CallbackQueryHandler(
                 catch_next, 
                 pattern = pattern_identifier +
@@ -152,7 +149,7 @@ search = ConversationHandler(
                 PATTERN_TO_CATCH_THE_BUY_BUTTON)
             ]
         },
-    fallbacks = [MessageHandler(filters.ALL, cancel_search)]
+    fallbacks = [CommandHandler("cancel", cancel_search)]
     )
 
 

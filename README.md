@@ -27,8 +27,10 @@ The following are instructions on how to use this bot:
 
 - Type /show_categories to see products by category.
 - To search for something, you can use the command /search.
-- To ask a catalog question in ordinary chat, configure `OPENAI_API_KEY`; the
-  assistant can read categories and available products. See
+- Each chat has a persistent cart. Use `/cart` to view it and `/cart help` for
+  add, set quantity, remove, and clear commands. Group members share one cart.
+- To shop in ordinary chat, configure `OPENAI_API_KEY`; the assistant can find
+  products and edit this chat's cart, with live activity messages. See
   [catalog assistant setup](docs/catalog-assistant.md).
 - To buy something, you need to register a password. To do this, type /register.
 - The admins can add products and categories with the commands /add_product and /add_category.

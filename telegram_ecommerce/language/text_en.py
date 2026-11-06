@@ -1,21 +1,20 @@
 
 text_en = ({
     "start" : 
-"""hello, I'm a bot that will help you buy products in this e-commerce. 
-type /show_categories to see categories.
-type /register to autenticate your account.
-type /help for more information.""",
+"""Tell me what you're looking for, or ask me to add a product to this chat's cart.
+Use /cart to view and edit the cart, /show_categories to browse, and /help for more commands.""",
     "start_description" : "A wellcome message if you dont known this bot",
     "help" : 
 
-"""The fallowing are instructions of how use this bot:
+"""Ask about products in ordinary chat, for example: "Add two notebooks to my cart."
+/cart — view this chat's cart; /cart help — edit commands
+/show_categories — browse categories
+/search — search the catalogue
+/cancel — leave catalogue browsing
+/register — create an account before checkout
+/language — choose your language
 
-type /show_categories to see products by category.
-
-To search to something you can use the command /search
-
-To buy something you need to register a password. 
-To do this type /login.""",
+Group members share one cart. Cart items do not reserve stock; checkout uses the existing single-product flow.""",
     "help_description" : "A long message with all commands avaible for you, and how to use them.",
     "help_admin":
 """
@@ -36,6 +35,8 @@ To add others admin you can use the command(Note: have sure that the people alre
     "catalog_assistant_unavailable" : "The shopping assistant is unavailable right now. Use /search or /show_categories. If you requested a cart change, check /cart before trying it again.",
     "assistant_message_too_long": "Please keep shopping requests under 1,000 characters.",
     "assistant_cart_saved": "Your cart changes were saved, but I could not finish the reply. Use /cart to check your cart.",
+    "assistant_cart_partial": "Some cart changes were saved, but I could not complete the whole request. Check /cart before trying again.",
+    "assistant_cart_rejected": "I could not make that cart change. Your cart was not changed. Please specify the product and quantity, or use /cart help.",
     "activity_thinking": "Thinking…",
     "activity_searching": "Searching catalogue…",
     "activity_finding": "Finding {product}…",

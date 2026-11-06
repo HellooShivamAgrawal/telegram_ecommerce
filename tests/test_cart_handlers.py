@@ -12,7 +12,7 @@ os.environ.setdefault("BOT_TOKEN", "test-token")
 for name in ("DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME"):
     os.environ.setdefault(name, "test")
 
-from telegram_ecommerce.agent.catalog import CartUpdatedResponseError
+from telegram_ecommerce.agent.catalog import CartActionRejectedError, CartUpdatedResponseError
 from telegram_ecommerce.agent.progress import ActivityMessage, progress_text
 
 cart_handler = importlib.import_module("telegram_ecommerce.handlers.cart")
@@ -59,6 +59,17 @@ class CartCommandTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(cart_handler.cart_service, "mutate_cart") as mutate:
             await cart_handler.cart_command(update(), ctx)
         mutate.assert_not_called()
+
+    async def test_replayed_command_displays_fresh_cart(self):
+        event = update()
+        ctx = context()
+        ctx.args = ["clear"]
+        with patch.object(cart_handler.cart_service, "mutate_cart",
+                          return_value={"cart": {"items": []}, "replayed": True}), patch.object(
+            cart_handler.cart_service, "get_cart", return_value=EMPTY_CART,
+        ) as read:
+            await cart_handler.cart_command(event, ctx)
+        read.assert_called_once_with(-100123)
 
     async def test_service_failure_does_not_expose_exception(self):
         event = update()
@@ -171,6 +182,27 @@ class AssistantHandlerTests(unittest.IsolatedAsyncioTestCase):
         final = status.edit_text.await_args.args[0]
         self.assertIn("saved", final)
         self.assertIn("/cart", final)
+
+    async def test_partial_cart_failure_never_claims_nothing_changed(self):
+        event = update()
+        status = SimpleNamespace(edit_text=AsyncMock())
+        event.effective_message.reply_text.return_value = status
+        with patch.object(assistant_handler, "answer_catalog_question", new_callable=AsyncMock,
+                          side_effect=CartActionRejectedError("insufficient_stock", saved=True)):
+            await assistant_handler.answer_message(event, context())
+        final = status.edit_text.await_args.args[0]
+        self.assertIn("Some cart changes were saved", final)
+        self.assertNotIn("not changed", final)
+
+    async def test_undeliverable_final_reply_does_not_rerun_assistant(self):
+        event = update()
+        with patch.object(assistant_handler, "answer_catalog_question", new_callable=AsyncMock,
+                          return_value="Saved.") as answer, patch.object(
+            ActivityMessage, "finish", new_callable=AsyncMock, return_value=False,
+        ), patch.object(assistant_handler.logger, "warning") as warning:
+            await assistant_handler.answer_message(event, context())
+        answer.assert_awaited_once()
+        self.assertEqual(warning.call_args.args[1], event.update_id)
 
 
 if __name__ == "__main__":

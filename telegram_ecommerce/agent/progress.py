@@ -65,7 +65,7 @@ def _retry_seconds(error):
 
 
 class ActivityMessage:
-    """Edit one status message; progress delivery never blocks a tool operation."""
+    """Edit one status message; delivery failures do not abort tool operations."""
 
     def __init__(self, source, context, *, clock=time.monotonic):
         self.source = source
