@@ -129,13 +129,15 @@ async def navigation(tmp_path, fail_photo=False, missing_image=False):
             assert detailed['reply_markup']['inline_keyboard'][1][0]['text'] == 'Summary'
             assert detailed['message_id'] == first['message_id']
             assert transport.events.count('sendPhoto') == 1
-            assert transport.events.count('editMessageMedia') == 2
-            assert transport.events.count('editMessageCaption') == 1
+            assert transport.events.count('editMessageMedia') == (0 if fail_photo else 2)
+            assert transport.events.count('editMessageCaption') == (0 if fail_photo else 1)
+            if fail_photo:
+                assert transport.events.count('editMessageText') == 3
             await app.process_update(click(app.bot, detailed, 'demo:1:back', 6))
             assert 'Bags' in transport.records[-1]['text']
             assert transport.records[-1]['reply_markup']['inline_keyboard'][0][0]['callback_data'] == 'demo:1:cat:0'
     assert not failures
-    assert len(transport.uploads) == 3
+    assert len(transport.uploads) == (1 if fail_photo else 3)
     # Retirement follows delivery rather than deleting the controls before upload.
     assert transport.events.index('sendPhoto') < transport.events.index('editMessageReplyMarkup')
     if fail_photo:

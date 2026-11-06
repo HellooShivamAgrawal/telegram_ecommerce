@@ -8,9 +8,9 @@ checks does not establish live payment, fulfillment, or service reliability.
 
 | Journey | Evidence | Remaining boundary |
 | --- | --- | --- |
-| Start and categories | Real Telegram handler dispatch, category-scoped results | Live client review recorded below |
+| Start and categories | Real Telegram handler dispatch, category-scoped results | Catalog and nine-item picker observed in Telegram; automated clicks unavailable |
 | Explicit and keyword search | PostgreSQL relevance, typo/modifier/isolation tests; no API required | Snapshot freshness depends on import |
-| Category → product → Next/Previous | Multipart serialization and constant message ID | Live client review recorded below |
+| Category → product → Next/Previous | Multipart serialization and constant message ID | Catalog and nine-item picker observed in Telegram; automated clicks unavailable |
 | Details and nine-item picker | Caption edits, 9/9/2 pagination, whole-result selection | Native text picker; no image grid |
 | Missing photos / failed edits | Text fallback, neutral artwork, retained prior index | Transport failure may prevent even an alert |
 | Live-store cart | PostgreSQL CRUD, isolation, stock checks, concurrent writes and replay tests | No combined cart checkout exists |
@@ -65,6 +65,22 @@ References: [Telegram Mini Apps](https://core.telegram.org/bots/webapps) and
 ## Verification record
 
 The prerequisite branch passed 270 tests and 13 subtests in a dedicated
-PostgreSQL database. Final browsing-branch checks and live client observations
-are recorded in the PR after verification. No real money was moved during this
+PostgreSQL database. The browsing branch passed 272 tests and 13 subtests; its four media/navigation
+regression tests also passed after the live-audit fallback correction. GitHub CI
+passed for both prerequisite and browsing PRs before that final correction; the
+updated checks are tracked on the PR.
+
+Live Telegram observations confirmed the category overview and nine-item picker.
+The desktop automation could use the composer but inline-button pointer actions
+failed with `AXError.notImplemented`, so automated live click completion is not
+claimed. Actual runtime logs revealed a failed photo upload followed by rejected
+attempts to add media to a text fallback card. The browser now keeps such cards
+as text during navigation; photos remain editable on actual photo messages.
+Transport tests cover both paths and rejected edits. Active DailyObjects image
+files were present for all 706 products, so missing local files did not explain
+the observed upload failure. External Telegram transport reliability remains an
+operational gate, not a solved issue inferred from unit tests.
+
+A fresh live Decisions probe still returned `rate_limit_exceeded`. No full
+natural-language model benchmark or sandbox payment completion was possible. No real money was moved during this
 audit and no claim of final public-launch readiness is made.

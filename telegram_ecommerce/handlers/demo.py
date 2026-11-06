@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+import re
 from os import environ
 from pathlib import Path
 
@@ -27,6 +28,12 @@ STATE_KEY = 'demo_catalog_state'
 PAGE_SIZE = 10
 PICKER_SIZE = 9
 NO_PHOTO = Path(__file__).resolve().parents[2] / 'assets' / 'product-photo-unavailable.png'
+
+
+def _delivery_error(error):
+    """Keep useful provider errors without logging request URLs or bot tokens."""
+    message = re.sub(r'https?://\S+', '[url]', str(error))
+    return re.sub(r'\d{5,}:[A-Za-z0-9_-]+', '[token]', message)[:250]
 
 
 def _state(update, context):
@@ -165,7 +172,11 @@ async def _show_product(update, context, number, detailed=False, *, edit=False):
     if edit:
         # Details only change the caption. Moving to another product replaces the
         # image and caption together; failures leave the prior card in place.
-        if update.callback_query.data.rsplit(':', 1)[-1] in {'detail', 'summary'} and message.photo:
+        if not message.photo:
+            # A text fallback stays text; some Telegram servers reject adding
+            # media to an existing text message. Never abandon its navigation.
+            delivered = await message.edit_text(caption, reply_markup=markup)
+        elif update.callback_query.data.rsplit(':', 1)[-1] in {'detail', 'summary'}:
             delivered = await message.edit_caption(caption=caption, reply_markup=markup)
         elif photo:
             delivered = await message.edit_media(InputMediaPhoto(photo, caption=caption), reply_markup=markup)
@@ -181,7 +192,8 @@ async def _show_product(update, context, number, detailed=False, *, edit=False):
             try:
                 delivered = await message.reply_photo(photo, caption=caption, reply_markup=markup)
             except TelegramError as error:
-                logger.warning('Preview photo unavailable; sending text card (%s)', type(error).__name__)
+                logger.warning('Preview photo unavailable; sending text card (%s): %s',
+                               type(error).__name__, _delivery_error(error))
         if delivered is None:
             delivered = await message.reply_text(caption, reply_markup=markup)
     state['card_message_id'] = delivered.message_id
@@ -351,13 +363,13 @@ async def demo_callback(update, context):
             return
         state.clear()
         state.update(before)
-        logger.warning('Product card edit rejected (%s)', type(error).__name__)
+        logger.warning('Product card edit rejected (%s): %s', type(error).__name__, _delivery_error(error))
         await query.answer('Couldn’t update this card. Please try again.', show_alert=True)
         return
     except TelegramError as error:
         state.clear()
         state.update(before)
-        logger.warning('Product card delivery failed (%s)', type(error).__name__)
+        logger.warning('Product card delivery failed (%s): %s', type(error).__name__, _delivery_error(error))
         await query.answer('Couldn’t update this card. Please try again.', show_alert=True)
         return
     if action not in card_actions:

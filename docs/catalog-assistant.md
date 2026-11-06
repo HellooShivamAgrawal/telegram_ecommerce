@@ -190,3 +190,7 @@ product's photo. New-card upload failure can still fall back to a text card.
 
 Tests use real Telegram Update dispatch and HTTP multipart serialization with
 an offline transport. They assert stable message IDs and counts, not only text.
+
+Text fallback cards remain text while navigating; the bot does not depend on
+Telegram accepting media insertion into an existing text message. Provider edit
+errors retain the displayed selection and log a short URL/token-redacted reason.
