@@ -17,6 +17,7 @@ from telegram_ecommerce.agent.routing import answer_shopping_request
 from telegram_ecommerce.agent.progress import ActivityMessage
 from telegram_ecommerce.utils.log import logger
 from telegram_ecommerce.miniapp.links import mini_app_url
+from telegram_ecommerce.database.product_facts import product_facts
 
 
 BRANDS = ('dailyobjects', 'blue_tokai', 'nicobar', 'ellementry', 'jaipur_rugs')
@@ -96,6 +97,13 @@ def _card_text(product, brand_number, detailed=False):
                 value = ', '.join(map(str, value[:8]))
             if value:
                 lines.append(f'{key.replace("_", " ").title()}: {str(value)[:120]}')
+    if detailed:
+        facts = product_facts(product)
+        for key, value in facts['specifications'].items():
+            if key.lower() in {'dimensions', 'capacity', 'weight', 'compatibility'}:
+                lines.append(f'{key}: {value}')
+        if facts['fit_note']:
+            lines.append(facts['fit_note'])
     if detailed and product.description:
         lines.append('')
         lines.append(product.description[:430 if detailed else 170].strip())
@@ -308,7 +316,10 @@ async def _explicit_search(update, context, query):
         await update.effective_message.reply_text('Please send product keywords in 100 characters or fewer.')
         return
     _state(update, context).pop('search_requested_at', None)
-    await _show_search(update, context, BRANDS.index(ACTIVE_BRAND) + 1, query)
+    try:
+        await _show_search(update, context, BRANDS.index(ACTIVE_BRAND) + 1, query)
+    except ValueError:
+        await update.effective_message.reply_text('Please enter a valid item-price limit, such as blue backpack under 2500.')
 
 
 async def demo_cancel_command(update, context):
@@ -415,6 +426,25 @@ async def demo_text_search(update, context):
         await _explicit_search(update, context, message.text)
         return
     state.pop('search_requested_at', None)
+    # Known product facts should remain accessible during provider outages.
+    # This reports source data, never infers device fit or a delivered total.
+    fact_question = re.search(r'\b(?:fit|dimensions|capacity|material|weight|delivery|shipping|price)\b|how much', message.text, re.I)
+    complex_question = re.search(r'\b(?:compare|recommend|better|another|instead|cart|buy|checkout|order|cancel)\b', message.text, re.I)
+    if (fact_question and not complex_question and state.get('opened_at', 0) > now - 1800
+            and state.get('opened_product_id')):
+        product = await asyncio.to_thread(_product, state['opened_product_id'], ACTIVE_BRAND)
+        if product:
+            facts = product_facts(product)
+            lines = [f'Source catalog: {product.name}', f'Item price: {_money(product.price)}']
+            lines += [f'{key}: {value}' for key, value in facts['specifications'].items()]
+            if facts['fit_note']:
+                lines.append(facts['fit_note'])
+            if not facts['specifications']:
+                lines.append('No detailed specifications are listed in this catalog snapshot.')
+            lines.append('Delivery charges, delivery dates and the checkout total are not available in this preview.')
+            markup = (InlineKeyboardMarkup([[InlineKeyboardButton('View product photos', web_app=WebAppInfo(mini_app_url(q=product.name)))]])) if mini_app_url() else None
+            await message.reply_text('\n'.join(lines)[:3900], reply_markup=markup)
+            return
     history = state.get('history', []) if now - state.get('history_at', 0) < 1800 else []
     if state.get('opened_at', 0) > now - 1800 and state.get('opened_product_id'):
         history = history + [{'role': 'assistant', 'content':
@@ -437,18 +467,24 @@ async def demo_text_search(update, context):
     elif reply.products:
         state.pop('card_message_id', None)
         state.pop('picker_ids', None)
-        state.update(product_ids=[product['id'] for product in reply.products], index=0, choice_message_id=None)
+        state.update(product_ids=[product['id'] for product in reply.products], index=0, choice_message_id=None,
+                     search_query=reply.query, web_category='')
         label = ('These are the closest matches. Which one would you like to see?' if reply.related
                  else 'Which product would you like to see?')
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton(product['name'][:60], callback_data=f"demo:{number}:choose:{product['id']}")]
-            for product in reply.products
-        ])
+        buttons = [[InlineKeyboardButton(
+            product['name'][:48] + (' · ' + _money(float(product['price'])) if product.get('price') is not None else ''),
+            callback_data=f"demo:{number}:choose:{product['id']}")] for product in reply.products]
+        if mini_app_url():
+            buttons.insert(0, [InlineKeyboardButton('View matching photos' if reply.query else 'Browse shop',
+                web_app=WebAppInfo(mini_app_url(q=reply.query)))])
+        markup = InlineKeyboardMarkup(buttons)
         if await activity.finish(label, reply_markup=markup):
             state['choice_message_id'] = activity.message.message_id
         answer = 'Products found: ' + '; '.join(f"{p['name']} (ID {p['id']})" for p in reply.products)
     else:
-        await activity.finish(reply.text)
+        markup = (InlineKeyboardMarkup([[InlineKeyboardButton('Browse shop', web_app=WebAppInfo(mini_app_url()))]])
+                  if mini_app_url() else None)
+        await activity.finish(reply.text, reply_markup=markup)
         answer = reply.text
     state['history'] = (history + [{'role': 'user', 'content': message.text},
                                   {'role': 'assistant', 'content': answer}])[-6:]

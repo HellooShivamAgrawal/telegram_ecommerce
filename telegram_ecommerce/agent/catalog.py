@@ -205,11 +205,12 @@ def execute_preview_tool(brand, name, arguments):
         return {'categories': [category for category in categories if category][:30]}
 
     def record(product):
+        from telegram_ecommerce.database.product_facts import product_facts
         return {'id': product.id, 'name': product.name,
                 'description': (product.description or '')[:700],
                 'price': str(product.price) if product.price is not None else None,
                 'currency': 'INR', 'category': product.category,
-                'source_available': product.available, 'catalog_preview': True}
+                'source_available': product.available, 'catalog_preview': True, 'facts': product_facts(product)}
 
     if name == 'search_products':
         result = search_demo_catalog(arguments['query'], brand, limit=5)

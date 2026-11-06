@@ -122,3 +122,32 @@ def test_spelling_variants_rank_product_names_above_description_mentions(catalog
         assert result.hits[0].match_kind == 'exact'
     assert not search_demo_catalog('red organizer', 'dailyobjects').hits
     assert search_demo_catalog('organizer', 'dailyobjects', category='Bags').hits[0].product.name == 'Laptop Bag'
+
+
+def test_customer_typo_budget_and_unrelated_category(catalog):
+    from telegram_ecommerce.database.models import DemoProduct, Session
+    from telegram_ecommerce.database.search import search_demo_catalog
+    with Session.begin() as session:
+        for name, category, price, description in [
+            ('Blue Laptop Sleeve', 'Sleeves', 999, ''),
+            ('Blue Backpack', 'Backpacks', 2499, ''),
+            ('Blue Backpack Large', 'Backpacks', 2999, ''),
+            ('Blue Phone Stand', 'Stands', 799, 'Attaches to the back of a phone'),
+        ]:
+            session.add(DemoProduct(brand='dailyobjects', source_product_id=name,
+                                   source_url='https://example.com', name=name, category=category,
+                                   price=price, description=description, details={}))
+    typo=search_demo_catalog('laptpo sleve','dailyobjects')
+    assert [h.product.name for h in typo.hits] == ['Blue Laptop Sleeve']
+    assert typo.suggestions_only
+    assert {h.product.name for h in search_demo_catalog('blue backpack','dailyobjects').hits} == {'Blue Backpack','Blue Backpack Large'}
+    assert [h.product.name for h in search_demo_catalog('blue backpack under ₹2,500','dailyobjects').hits] == ['Blue Backpack']
+    assert not search_demo_catalog('blue backpack under 2499','dailyobjects').hits
+    assert search_demo_catalog('blue backpack up to 2499','dailyobjects').hits
+    assert not search_demo_catalog('red backpack under 2500','dailyobjects').hits
+    from telegram_ecommerce.miniapp import server
+    from unittest.mock import patch
+    with patch.object(server,'BRAND','dailyobjects'):
+        assert all(p['price'] <= 1000 for p in server.catalog(max_price='1000')['products'])
+        for price in ('NaN', 'Infinity', '-1', 'invalid'):
+            with pytest.raises(ValueError): server.catalog(max_price=price)

@@ -8,8 +8,9 @@ from urllib.parse import parse_qs, urlsplit
 
 from sqlalchemy import select, func, text
 from telegram_ecommerce.database.models import DemoProduct, Session
-from telegram_ecommerce.database.search import search_demo_catalog
+from telegram_ecommerce.database.search import search_demo_catalog, catalog_price
 from telegram_ecommerce.miniapp.images import thumbnail
+from telegram_ecommerce.database.product_facts import product_facts
 
 STATIC = Path(__file__).with_name('static')
 BRAND = os.environ.get('DEMO_BRAND', '')
@@ -22,20 +23,23 @@ def product_json(product):
     return dict(id=product.id, name=product.name, category=product.category or 'Other',
                 price=float(product.price) if product.price is not None else None,
                 mrp=float(product.mrp) if product.mrp is not None else None,
-                available=product.available, description=product.description or '',
+                available=product.available, description=product.description or '', facts=product_facts(product),
                 image=f'/api/image/{product.id}?v=2' if product.demo_image else None)
 
 
-def catalog(query='', category='', page=0):
+def catalog(query='', category='', page=0, max_price=None):
     if len(query) > 100 or len(category) > 160 or not 0 <= page <= 10000:
         raise ValueError('Search is too long or page is invalid.')
+    max_price = catalog_price(max_price)
     with Session() as session:
         session.execute(text("SET LOCAL statement_timeout = '5000'"))
         where = [DemoProduct.brand == BRAND]
+        if max_price is not None:
+            where.append(DemoProduct.price <= max_price)
         if category:
             where.append(DemoProduct.category == category)
         if query:
-            result = search_demo_catalog(query, BRAND, category=category)
+            result = search_demo_catalog(query, BRAND, category=category, max_price=max_price)
             hits = result.hits
             total = len(hits)
             products = [dict(product_json(hit.product), related=hit.match_kind == 'related')
@@ -75,7 +79,7 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == '/api/catalog':
                 values = parse_qs(url.query, max_num_fields=8)
                 self.send(200, catalog(values.get('q', [''])[0].strip(), values.get('category', [''])[0],
-                                       int(values.get('page', ['0'])[0])))
+                                       int(values.get('page', ['0'])[0]), values.get('max_price', [''])[0]))
             elif url.path.startswith('/api/image/'):
                 product_id = int(url.path.rsplit('/', 1)[-1])
                 with Session() as session:

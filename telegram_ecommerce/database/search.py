@@ -5,6 +5,7 @@ must match; approximate matches are labeled so callers can offer a choice.
 """
 
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 import re
 from unicodedata import category as unicode_category, normalize
 
@@ -92,8 +93,14 @@ def _strength(field, word, variants):
     if partial is not None:
         branches.append((partial, 0.65))
     if len(word) >= MIN_FUZZY_LENGTH and word.isalpha():
-        similarity = func.strict_word_similarity(word, field)
-        branches.append((similarity >= MIN_WORD_SIMILARITY, 0.5 + 0.3 * similarity))
+        # Compare whole words of a plausible length. Trigram overlap alone
+        # incorrectly made 'backpack' match the word 'back' on phone stands.
+        tokens = func.regexp_split_to_table(field, r'\W+').table_valued('token').render_derived()
+        similarity = select(func.max(func.strict_word_similarity(word, tokens.c.token))).where(
+            func.length(tokens.c.token).between(len(word) - 1, len(word) + 1)
+        ).select_from(tokens).scalar_subquery()
+        threshold = 0.4 if len(word) >= 6 else MIN_WORD_SIMILARITY
+        branches.append((similarity >= threshold, 0.5 + 0.3 * similarity))
     return lexical, case(*branches, else_=0.0)
 
 
@@ -170,9 +177,33 @@ def search_catalog(query, limit=10):
 DEMO_FIELD_WEIGHTS = {'name': 10.0, 'brand': 6.0, 'category': 5.0, 'description': 1.0}
 
 
-def search_demo_catalog(query, brand, limit=50, *, category=None):
+def catalog_price(value):
+    if value in (None, ''): return None
+    try:
+        price = Decimal(str(value).replace(',', ''))
+        if not price.is_finite() or not 0 <= price <= 10000000: raise ValueError()
+        return price
+    except (InvalidOperation, ValueError):
+        raise ValueError('Enter a valid maximum price.') from None
+
+
+def split_price_query(query):
+    """Recognize an explicit trailing item-price limit; retain every other modifier."""
+    if not isinstance(query, str): return query, None, False
+    match = re.fullmatch(r'(.+?)\s+(under|below|up to|at most)\s*(?:₹|rs\.?\s*|inr\s*)?([0-9][0-9,]*(?:\.[0-9]{1,2})?)', query.strip(), re.I)
+    if not match: return query, None, False
+    return match[1], catalog_price(match[3]), match[2].lower() in {'under', 'below'}
+
+
+def search_demo_catalog(query, brand, limit=50, *, category=None, max_price=None):
     """Use shared relevance rules within one read-only merchant snapshot."""
+    query, query_price, exclusive = split_price_query(query)
     predicates = (DemoProduct.brand == brand,)
+    max_price = catalog_price(max_price)
+    if max_price is not None:
+        predicates += (DemoProduct.price <= max_price,)
+    if query_price is not None:
+        predicates += ((DemoProduct.price < query_price if exclusive else DemoProduct.price <= query_price),)
     if category:
         predicates += (DemoProduct.category == category,)
     return _search_catalog(query, limit, model=DemoProduct, weights=DEMO_FIELD_WEIGHTS,
@@ -198,7 +229,7 @@ def _search_catalog(query, limit, *, model=Product, weights=FIELD_WEIGHTS, predi
         for word, variants in zip(words, stems):
             terms.append((word, tuple(dict.fromkeys([word, *(variants or [])]))))
         # Transaction-local: never leak a threshold into pooled connections.
-        session.execute(text("SELECT set_config('pg_trgm.strict_word_similarity_threshold', '0.49', true), "
+        session.execute(text("SELECT set_config('pg_trgm.strict_word_similarity_threshold', '0.39', true), "
                              "set_config('plan_cache_mode', 'force_custom_plan', true)"))
         rows = session.execute(_ranked_statement(
             phrase, terms, limit, model=model, weights=weights, predicates=predicates)).all()

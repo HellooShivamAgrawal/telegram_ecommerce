@@ -20,8 +20,8 @@ DECISION_MODEL = os.getenv('OPENAI_DECISION_MODEL', 'gpt-6-luna')
 READ_MODEL = os.getenv('OPENAI_READ_MODEL', 'gpt-6-luna')
 MIN_ROUTE_CONFIDENCE = 0.90
 _PROVIDER_BLOCKED_UNTIL = 0.0
-BUSY_MESSAGE = ('The shopping assistant is busy right now. You can still browse with /start '
-                'or search product keywords with /search. Please try your question again shortly.')
+BUSY_MESSAGE = ('Product recommendations are temporarily unavailable. You can still type product keywords, '
+                'such as blue backpack, or use /search to find products.')
 OPERATIONS = {
     'add': 'add products or increase an item quantity in the cart',
     'set': 'set a final cart quantity, including make it three, remove an item, or set it to zero',
@@ -50,6 +50,7 @@ class ShoppingReply:
     products: tuple = ()
     categories: bool = False
     related: bool = False
+    query: str = ''
 
 
 class _MeteredResource:
@@ -156,7 +157,7 @@ async def _search_reply(message, brand):
         result = await asyncio.to_thread(execute_preview_tool, brand, 'search_products', {'query': message})
     else:
         result = await asyncio.to_thread(execute_tool, 'search_products', {'query': message})
-    return ShoppingReply(products=tuple(result['products']), related=result['suggestions_only'],
+    return ShoppingReply(products=tuple(result['products']), related=result['suggestions_only'], query=message,
                          text='' if result['products'] else 'No matching products found. Try another product or more specific keywords.')
 
 
@@ -171,11 +172,19 @@ async def answer_shopping_request(message, *, catalog_brand=None, client=None, *
                   'what do we have', 'what do you have', 'what is available',
                   'what have you got', 'show me the catalog', 'show catalog'}:
         return ShoppingReply(categories=True)
-    if is_keyword_query(message):
+    if catalog_brand and re.search(r'\b(?:buy|purchase|checkout|cart|order|orders|refund|cancel|cancellation|tracking)\b', phrase):
+        return ShoppingReply('This is a catalog preview: it cannot create or change a cart, take payment, '
+                             'place, track, or cancel orders. No order or cart change has been made. '
+                             'You can browse products in Shop; delivery charges and a checkout total are not available here.')
+    from telegram_ecommerce.database.search import split_price_query
+    try:
+        keywords = split_price_query(message)[0] if catalog_brand else message
+    except ValueError:
+        return ShoppingReply('Please enter a valid item-price limit, such as blue backpack under 2500.')
+    if is_keyword_query(keywords):
         reply = await _search_reply(message, catalog_brand)
-        if reply.products:
-            logger.info('shopping_turn route=direct_search preview=%s api_calls=0', catalog_brand is not None)
-            return reply
+        logger.info('shopping_turn route=direct_search preview=%s api_calls=0', catalog_brand is not None)
+        return reply
     if client is None:
         async with AsyncOpenAI(timeout=15.0, max_retries=1) as owned:
             return await _route_request(message, owned, catalog_brand, options)
