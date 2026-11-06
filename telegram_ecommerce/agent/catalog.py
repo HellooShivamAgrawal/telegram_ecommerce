@@ -38,8 +38,8 @@ INSTRUCTIONS = (
     "after a replayed receipt. You cannot buy, pay, refund, or edit the catalog. "
     "Checkout remains through /search or /show_categories and Telegram's existing "
     "single-product checkout. Do not ask for passwords or payment details. "
-    "Search using short product keywords in singular form, without quantities. If a search "
-    "returns no matches, retry a shorter or singular keyword before concluding none exist. "
+    "Search using short product keywords without quantities. Search handles word forms "
+    "and common typos; use the returned product names and IDs. "
     "If the catalog has no match, say so. Use /cart to show the cart. Keep replies short."
 )
 
@@ -56,7 +56,7 @@ def _function(name, description, properties):
 
 TOOLS = [
     _function("list_categories", "List categories in the store.", {}),
-    _function("search_products", "Search by short product keywords, preferably singular (notebook, not notebooks).",
+    _function("search_products", "Find available products by keywords; search handles plurals and common typos.",
               {"query": {"type": "string"}}),
     _function("get_product", "Get an available product by its integer ID.",
               {"product_id": {"type": "integer"}}),
@@ -167,7 +167,7 @@ def execute_catalog_tool(name, arguments):
         products = [_product_record(p) for p in query.search_products(arguments["query"], limit=5)]
         result = {"products": products}
         if not products:
-            result["search_hint"] = "No exact keyword match. Retry a shorter or singular product keyword."
+            result["search_hint"] = "No matching available products. Ask for another product or more specific keywords."
         return result
     product = query.get_available_product(arguments["product_id"])
     return {"product": _product_record(product) if product else None}
