@@ -67,6 +67,11 @@ Index(
     func.to_tsvector(text("'simple'"), Product.name + ' ' + Product.description),
     postgresql_using='gin',
 )
+Index(
+    'ix_products_search_english',
+    func.to_tsvector(text("'english'"), Product.name + ' ' + Product.description),
+    postgresql_using='gin',
+)
 
 
 class Order(Base):

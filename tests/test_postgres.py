@@ -41,14 +41,15 @@ def empty_tables(database):
 
 def test_migration_creates_search_index_and_payment_fields(database):
     inspector = inspect(database)
-    assert {'ix_products_search', 'ix_products_category_id'} <= {
+    assert {'ix_products_search', 'ix_products_search_english', 'ix_products_category_id'} <= {
         index['name'] for index in inspector.get_indexes('products')
     }
     columns = {column['name']: column for column in inspector.get_columns('orders')}
     assert columns['status']['nullable'] is False
     assert 'paid_at' in columns
     with database.connect() as connection:
-        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '14b8c5f7a2d1'
+        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '29f6c2a7d8b4'
+        assert connection.scalar(text("SELECT EXISTS (SELECT FROM pg_extension WHERE extname = 'pg_trgm')"))
 
 
 def test_search_only_returns_available_products_and_respects_limit(database):
