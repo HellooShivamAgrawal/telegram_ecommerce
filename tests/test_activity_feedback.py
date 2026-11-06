@@ -85,6 +85,33 @@ class TypingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(warning.call_args.args[1], "NetworkError")
         self.assertNotIn("PRIVATE", str(warning.call_args))
 
+    async def test_status_rate_limit_extension_delays_pending_typing(self):
+        now = [100.0]
+        delays = []
+        sent_at = []
+        sent = asyncio.Event()
+
+        async def typing(*args):
+            sent_at.append(now[0])
+            sent.set()
+            await asyncio.Event().wait()
+
+        source = SimpleNamespace(reply_chat_action=AsyncMock(side_effect=typing))
+        activity = ActivityMessage(source, context(), clock=lambda: now[0])
+        activity.blocked_until = 105.0
+
+        async def sleep(delay):
+            delays.append(delay)
+            now[0] += delay
+            if len(delays) == 1:
+                activity._record_retry_after(RetryAfter(7))
+
+        with patch("telegram_ecommerce.agent.progress.asyncio.sleep", side_effect=sleep):
+            async with activity.typing():
+                await asyncio.wait_for(sent.wait(), 1)
+        self.assertEqual(sent_at, [112.0])
+        self.assertEqual(delays, [5.0, 7.0])
+
 
 class CommittedFeedbackTests(unittest.IsolatedAsyncioTestCase):
     async def test_save_waits_only_remaining_interval_and_precedes_final_reply(self):

@@ -91,6 +91,7 @@ class ActivityMessage:
             blocked_for = self.blocked_until - self.clock()
             if blocked_for > 0:
                 await asyncio.sleep(blocked_for)
+                continue  # A status edit may have extended the shared deadline.
             delay = TYPING_INTERVAL
             try:
                 await self.source.reply_chat_action(ChatAction.TYPING)
