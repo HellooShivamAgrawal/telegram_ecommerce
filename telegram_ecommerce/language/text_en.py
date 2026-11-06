@@ -44,6 +44,7 @@ To add others admin you can use the command(Note: have sure that the people alre
     "activity_checking": "Checking product details…",
     "activity_checking_product": "Checking {product}…",
     "activity_cart": "Opening your cart…",
+    "activity_cart_saved": "Cart change saved. Preparing your reply…",
     "activity_adding": "Adding to your cart…",
     "activity_adding_product": "Adding {product} to your cart…",
     "activity_updating": "Updating your cart…",

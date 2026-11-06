@@ -27,7 +27,7 @@ def context(**kwargs):
 
 
 def update(chat_id=-100123, update_id=55):
-    message = SimpleNamespace(text="Add a notebook", reply_text=AsyncMock())
+    message = SimpleNamespace(text="Add a notebook", reply_text=AsyncMock(), reply_chat_action=AsyncMock())
     return SimpleNamespace(
         effective_chat=SimpleNamespace(id=chat_id),
         effective_user=SimpleNamespace(id=999),

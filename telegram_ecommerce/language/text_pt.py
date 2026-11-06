@@ -44,6 +44,7 @@ Para adicionar outros administradores você pode usar o comando:
     "activity_checking": "Consultando detalhes do produto…",
     "activity_checking_product": "Consultando {product}…",
     "activity_cart": "Abrindo seu carrinho…",
+    "activity_cart_saved": "Alteração no carrinho salva. Preparando sua resposta…",
     "activity_adding": "Adicionando ao seu carrinho…",
     "activity_adding_product": "Adicionando {product} ao seu carrinho…",
     "activity_updating": "Atualizando seu carrinho…",
