@@ -65,10 +65,9 @@ References: [Telegram Mini Apps](https://core.telegram.org/bots/webapps) and
 ## Verification record
 
 The prerequisite branch passed 270 tests and 13 subtests in a dedicated
-PostgreSQL database. The browsing branch passed 272 tests and 13 subtests; its four media/navigation
-regression tests also passed after the live-audit fallback correction. GitHub CI
-passed for both prerequisite and browsing PRs before that final correction; the
-updated checks are tracked on the PR.
+PostgreSQL database. The final browsing branch passed 272 tests and 13 subtests after the live-audit
+fallback correction and stale-search-card checks. GitHub CI results for each
+pushed revision are tracked on the prerequisite and browsing PRs.
 
 Live Telegram observations confirmed the category overview and nine-item picker.
 The desktop automation could use the composer but inline-button pointer actions

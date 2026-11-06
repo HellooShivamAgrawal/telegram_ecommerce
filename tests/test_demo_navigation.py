@@ -188,6 +188,20 @@ async def picker_flow(tmp_path):
             edits = transport.events.count('editMessageMedia')
             await app.process_update(click(app.bot, old, 'demo:1:next', 9))
             assert transport.events.count('editMessageMedia') == edits
+            # New weak search results must invalidate the previous active card.
+            transport.fail_edit = False
+            result = SimpleNamespace(hits=[SimpleNamespace(product=products[i]) for i in (1, 2)], suggestions_only=True)
+            with patch.object(demo, 'search_demo_catalog', return_value=result):
+                await app.process_update(inbound(app.bot, '/search bags', 10, 8001))
+            choices = transport.records[-1]
+            await app.process_update(click(app.bot, card, 'demo:1:next', 11))
+            assert transport.events.count('editMessageMedia') == edits
+            await app.process_update(click(app.bot, choices, 'demo:1:choose:2', 12))
+            chosen = transport.records[-1]
+            assert chosen['reply_markup']['inline_keyboard'][0][1]['text'] == '2/2'
+            await app.process_update(click(app.bot, chosen, 'demo:1:prev', 13))
+            assert 'Bag 1' in transport.records[-1]['caption']
+            assert transport.records[-1]['message_id'] == chosen['message_id']
     assert not failures
 
 

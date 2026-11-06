@@ -233,6 +233,8 @@ async def _show_picker(update, context, number, page):
 async def _show_search(update, context, number, query):
     state = _state(update, context)
     result = await asyncio.to_thread(search_demo_catalog, query, BRANDS[number - 1])
+    state.pop('card_message_id', None)
+    state.pop('picker_ids', None)
     state.update(product_ids=[hit.product.id for hit in result.hits], index=0,
                  choice_message_id=None)
     if result.suggestions_only:
@@ -321,7 +323,7 @@ async def demo_callback(update, context):
                 or product_id not in state.get('product_ids', [])):
             await query.answer('Please search again for current matches.', show_alert=True)
             return
-        state.update(product_ids=[product_id], index=0, choice_message_id=None)
+        state.update(index=state['product_ids'].index(product_id), choice_message_id=None)
     state.pop('search_requested_at', None)
     await query.answer()
     if action == 'noop':
@@ -409,6 +411,8 @@ async def demo_text_search(update, context):
         await _show_categories(update, context, number)
         answer = 'Showing store categories.'
     elif reply.products:
+        state.pop('card_message_id', None)
+        state.pop('picker_ids', None)
         state.update(product_ids=[product['id'] for product in reply.products], index=0, choice_message_id=None)
         label = ('These are the closest matches. Which one would you like to see?' if reply.related
                  else 'Which product would you like to see?')
