@@ -35,8 +35,8 @@ def catalog(query='', category='', page=0):
         if category:
             where.append(DemoProduct.category == category)
         if query:
-            result = search_demo_catalog(query, BRAND)
-            hits = [hit for hit in result.hits if not category or hit.product.category == category]
+            result = search_demo_catalog(query, BRAND, category=category)
+            hits = result.hits
             total = len(hits)
             products = [dict(product_json(hit.product), related=hit.match_kind == 'related')
                         for hit in hits[page * PAGE_SIZE:(page + 1) * PAGE_SIZE]]

@@ -104,3 +104,21 @@ def test_miniapp_scopes_search_and_six_item_pagination(catalog, monkeypatch):
     assert not server.catalog('nonesuchxyz')['products']
     for options in ({'query':'x'*101}, {'page':-1}, {'category':'x'*161}):
         with pytest.raises(ValueError): server.catalog(**options)
+
+
+def test_spelling_variants_rank_product_names_above_description_mentions(catalog):
+    from telegram_ecommerce.database.models import DemoProduct, Session
+    from telegram_ecommerce.database.search import search_demo_catalog
+    with Session.begin() as session:
+        session.add_all([
+            DemoProduct(brand='dailyobjects', source_product_id='spelling1', source_url='https://example.com',
+                        name='Blue Desk Organiser', category='Desks', details={}),
+            DemoProduct(brand='dailyobjects', source_product_id='spelling2', source_url='https://example.com',
+                        name='Laptop Bag', description='Includes a small organizer', category='Bags', details={}),
+        ])
+    for word in ('organizer', 'organizers', 'organiser', 'organisers'):
+        result=search_demo_catalog(word, 'dailyobjects')
+        assert result.hits[0].product.name == 'Blue Desk Organiser'
+        assert result.hits[0].match_kind == 'exact'
+    assert not search_demo_catalog('red organizer', 'dailyobjects').hits
+    assert search_demo_catalog('organizer', 'dailyobjects', category='Bags').hits[0].product.name == 'Laptop Bag'
