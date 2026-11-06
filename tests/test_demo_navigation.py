@@ -44,7 +44,7 @@ class NavigationTransport(BaseRequest):
                 wire = httpx.Request('POST', 'https://example.invalid',
                                      data=request_data.json_parameters,
                                      files=request_data.multipart_data).read()
-                assert b'fixture image bytes' in wire or b'PNG' in wire
+                assert b'JFIF' in wire or b'PNG' in wire
                 self.uploads.append(wire)
                 if self.fail_photo and endpoint == 'sendPhoto':
                     return 400, json.dumps({'ok': False, 'error_code': 400, 'description': 'Bad Request: photo rejected'}).encode()
@@ -87,7 +87,8 @@ def test_photo_failure_keeps_product_and_navigation_accessible(tmp_path):
 
 
 async def navigation(tmp_path, fail_photo=False, missing_image=False):
-    (tmp_path / 'photo.jpg').write_bytes(b'fixture image bytes')
+    from PIL import Image
+    Image.new('RGB', (1200, 900), 'blue').save(tmp_path / 'photo.jpg')
     products = {i: SimpleNamespace(id=i, name=f'Bag {i}', details={}, price=100, mrp=None,
                                    available=True, description=f'Description {i}', category='Bags',
                                    demo_image='photo.jpg') for i in (1, 2)}
@@ -101,6 +102,7 @@ async def navigation(tmp_path, fail_photo=False, missing_image=False):
     async def error(update, context): failures.append(context.error)
     app.add_error_handler(error)
     with patch.object(demo, 'ACTIVE_BRAND', 'dailyobjects'), patch.object(demo, 'ROOT', tmp_path), \
+         patch('telegram_ecommerce.miniapp.images.ROOT', tmp_path), \
          patch.object(demo, '_categories', return_value=[('Bags', 2)]), \
          patch.object(demo, '_products', return_value=[1, 2]) as get_products, \
          patch.object(demo, '_product', side_effect=lambda product_id, brand: products[product_id]):
@@ -149,7 +151,8 @@ def test_nine_item_picker_preserves_card_and_full_result_set(tmp_path):
 
 
 async def picker_flow(tmp_path):
-    (tmp_path / 'photo.jpg').write_bytes(b'fixture image bytes')
+    from PIL import Image
+    Image.new('RGB', (1200, 900), 'blue').save(tmp_path / 'photo.jpg')
     products = {i: SimpleNamespace(id=i, name=f'Bag {i}', details={}, price=100, mrp=None,
                                    available=True, description='Description', category='Bags',
                                    demo_image='photo.jpg') for i in range(1, 21)}
@@ -160,6 +163,7 @@ async def picker_flow(tmp_path):
     async def error(update, context): failures.append(context.error)
     app.add_error_handler(error)
     with patch.object(demo, 'ACTIVE_BRAND', 'dailyobjects'), patch.object(demo, 'ROOT', tmp_path), \
+         patch('telegram_ecommerce.miniapp.images.ROOT', tmp_path), \
          patch.object(demo, '_categories', return_value=[('Bags', 20)]), \
          patch.object(demo, '_products', return_value=list(products)), \
          patch.object(demo, '_product', side_effect=lambda product_id, brand: products[product_id]), \
@@ -207,3 +211,25 @@ async def picker_flow(tmp_path):
 
 def test_missing_next_photo_does_not_reuse_previous_product_image(tmp_path):
     asyncio.run(navigation(tmp_path, missing_image=True))
+
+
+def test_miniapp_welcome_is_one_clear_action_and_deep_link_opens_product():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    async def run():
+        message = SimpleNamespace(reply_text=AsyncMock(), message_id=1)
+        update = SimpleNamespace(effective_message=message, effective_chat=SimpleNamespace(id=8001))
+        context = SimpleNamespace(user_data={}, args=[])
+        with patch.object(demo, 'ACTIVE_BRAND', 'dailyobjects'), \
+             patch.object(demo, '_categories', return_value=[('Bags', 10)]), \
+             patch.object(demo, 'mini_app_url', return_value='https://shop.example/'), \
+             patch.object(demo, '_product', return_value=SimpleNamespace(id=5)), \
+             patch.object(demo, '_show_product', new_callable=AsyncMock) as show:
+            await demo.demo_command(update, context)
+            buttons=message.reply_text.call_args.kwargs['reply_markup'].inline_keyboard
+            assert len(buttons) == 1 and buttons[0][0].web_app.url == 'https://shop.example/'
+            context.args=['product_5']
+            await demo.demo_command(update, context)
+            assert demo._state(update, context)['product_ids'] == [5]
+            show.assert_awaited_once_with(update, context, 1, detailed=True)
+    asyncio.run(run())

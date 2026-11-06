@@ -82,3 +82,25 @@ def test_preview_tools_cannot_read_another_store_or_mutate(catalog):
     assert execute_preview_tool('dailyobjects', 'get_product', {'product_id': catalog[4]}) == {'product': None}
     with pytest.raises(ValueError):
         execute_preview_tool('dailyobjects', 'clear_cart', {})
+
+
+def test_miniapp_scopes_search_and_six_item_pagination(catalog, monkeypatch):
+    from telegram_ecommerce.miniapp import server
+    from telegram_ecommerce.database.models import DemoProduct, Session
+    monkeypatch.setattr(server, 'BRAND', 'dailyobjects')
+    with Session.begin() as session:
+        for i in range(8):
+            session.add(DemoProduct(brand='dailyobjects', source_product_id=f'mini{i}',
+                                   source_url='https://example.com', name=f'Bag {i}', category='Bags', details={}))
+    first = server.catalog()
+    second = server.catalog(page=1)
+    assert len(first['products']) == len(second['products']) == 6
+    assert first['has_more'] and not second['has_more']
+    assert not ({p['id'] for p in first['products']} & {p['id'] for p in second['products']})
+    assert catalog[4] not in {p['id'] for p in first['products'] + second['products']}
+    assert server.catalog('notebok')['products']
+    assert all(p['related'] for p in server.catalog('notebok')['products'])
+    assert all(p['category'] == 'Bags' for p in server.catalog(category='Bags')['products'])
+    assert not server.catalog('nonesuchxyz')['products']
+    for options in ({'query':'x'*101}, {'page':-1}, {'category':'x'*161}):
+        with pytest.raises(ValueError): server.catalog(**options)
