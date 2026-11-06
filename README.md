@@ -26,6 +26,9 @@ Sellers can add, delete, and manage them.
 The following are instructions on how to use this bot:
 
 - Type /show_categories to see products by category.
+- Set `DEMO_BRAND` to serve one read-only owner demo at a time: DailyObjects,
+  Blue Tokai, Nicobar, ellementry, or Jaipur Rugs. See
+  [demo catalog setup](data/demo_catalogs/README.md).
 - To search for something, use /search. The same backend powers chat search,
   with ranked names/descriptions, plural matching, and a conservative typo
   fallback. See [catalog search](docs/catalog-search.md).

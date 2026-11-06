@@ -7,8 +7,8 @@ from telegram.ext import MessageHandler, filters
 
 from telegram_ecommerce.agent.catalog import (
     CartActionRejectedError, CartUpdatedResponseError, ProductSelectionRequired,
-    answer_catalog_question,
 )
+from telegram_ecommerce.agent.routing import answer_live_shopping as answer_catalog_question
 from telegram_ecommerce.agent.progress import ActivityMessage
 from telegram_ecommerce.language import get_text
 from telegram_ecommerce.utils.log import logger
@@ -55,7 +55,7 @@ async def answer_message(update, context):
     except ProductSelectionRequired as selection:
         await show_search_choices(
             update, context, [SimpleNamespace(**product) for product in selection.products],
-            activity=activity,
+            activity=activity, related=selection.related,
             notice=get_text('assistant_cart_partial', context) if selection.saved else None,
         )
         return

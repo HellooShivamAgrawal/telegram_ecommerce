@@ -136,3 +136,5 @@ Para adicionar outros administradores você pode usar o comando:
 })
 
 
+
+text_pt["search_matching_choices"] = 'Qual produto você gostaria de ver?'

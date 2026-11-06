@@ -7,3 +7,4 @@
 !.env.example
 *.env
 *.log
+data/demo_catalogs/images/

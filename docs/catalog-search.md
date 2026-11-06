@@ -134,3 +134,19 @@ compares an earlier implementation on the same data.
 
 References: [PostgreSQL text search](https://www.postgresql.org/docs/16/textsearch-controls.html)
 and [pg_trgm matching and indexes](https://www.postgresql.org/docs/16/pgtrgm.html).
+
+## Store previews
+
+Owner snapshots use the same ranking engine through `search_demo_catalog`, scoped
+by merchant before ranking. Their indexed fields are name, merchant, category,
+and description. Generated text and GIN full-text/trigram indexes refresh with
+ordinary inserts and edits (migration `7d31a6c9e204`). Snapshot availability can
+be unknown; previews retain source availability labels instead of treating it
+as live inventory. Results are capped at 50; approximate-only results offer up
+to five choices. Category browsing still covers the whole snapshot.
+
+The welcome screen accepts ordinary product keywords and `/search`; `/demo`
+remains a compatibility alias. Preview conversations now use catalog-scoped
+read-only tools and the [request router](catalog-assistant.md#request-routing-and-preview-conversations).
+Plain keyword matches and explicit searches do not require OpenAI. Snapshot
+products never become live-cart items.
