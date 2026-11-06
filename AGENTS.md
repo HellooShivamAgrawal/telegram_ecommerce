@@ -14,3 +14,6 @@
 - Search should rank useful partial and fuzzy candidates across merchant fields.
   Keep exact products ahead of related alternatives, preserve query modifiers,
   and offer choices for weak matches instead of silently choosing a substitute.
+- Keep Telegram browsing in one editable product card: Next, Previous, Details,
+  and product-picker actions must not append messages. Test message identity and
+  actual Telegram media serialization, not just handler return values.

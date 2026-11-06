@@ -173,3 +173,24 @@ searches the database directly. `/search keywords` also bypasses AI; `/cancel`,
 `/start`, or a catalog button exits the pending search. Common catalog requests,
 including “what do we have”, browse without a model. Category messages include a
 text overview as well as inline buttons.
+
+## In-place preview product browser
+
+Next/Previous replace the active card's media and caption. Details/Summary edit
+only the caption. “Browse 9” replaces the keyboard with a paged list of nine
+product names and prices; choosing one returns to the same card while preserving
+the complete result set. This is a native text picker, not a thumbnail grid.
+Category pagination edits the existing category message. Entering a category
+creates one product card; returning to categories remains a separate message.
+
+Card actions are bound to the current user/chat and active message. Failed edits
+restore the previous index instead of advancing behind an unchanged image. A
+missing image uses neutral fallback artwork rather than retaining another
+product's photo. New-card upload failure can still fall back to a text card.
+
+Tests use real Telegram Update dispatch and HTTP multipart serialization with
+an offline transport. They assert stable message IDs and counts, not only text.
+
+Text fallback cards remain text while navigating; the bot does not depend on
+Telegram accepting media insertion into an existing text message. Provider edit
+errors retain the displayed selection and log a short URL/token-redacted reason.

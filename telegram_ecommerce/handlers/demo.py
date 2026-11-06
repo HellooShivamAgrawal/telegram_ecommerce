@@ -2,12 +2,13 @@
 
 import asyncio
 import time
+import re
 from os import environ
 from pathlib import Path
 
 from sqlalchemy import func, select
-from telegram import ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
-from telegram.error import TelegramError
+from telegram import ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputMediaPhoto
+from telegram.error import BadRequest, TelegramError
 from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 from telegram_ecommerce.database.models import DemoProduct, Session
@@ -25,6 +26,14 @@ if ACTIVE_BRAND and ACTIVE_BRAND not in BRANDS:
 ROOT = Path(__file__).resolve().parents[2] / 'data' / 'demo_catalogs'
 STATE_KEY = 'demo_catalog_state'
 PAGE_SIZE = 10
+PICKER_SIZE = 9
+NO_PHOTO = Path(__file__).resolve().parents[2] / 'assets' / 'product-photo-unavailable.png'
+
+
+def _delivery_error(error):
+    """Keep useful provider errors without logging request URLs or bot tokens."""
+    message = re.sub(r'https?://\S+', '[url]', str(error))
+    return re.sub(r'\d{5,}:[A-Za-z0-9_-]+', '[token]', message)[:250]
 
 
 def _state(update, context):
@@ -68,12 +77,11 @@ def _card_text(product, brand_number, detailed=False):
     subtitle = product.details.get('subtitle')
     if subtitle and subtitle.casefold() != display_name.casefold():
         display_name += f' · {subtitle}'
-    lines = [f'DEMO · {NAMES[brand_number - 1]}', display_name,
-             f'Price: {_money(product.price)}']
+    lines = [display_name, _money(product.price)]
     if product.mrp and product.price and product.mrp > product.price:
-        lines.append(f'MRP: {_money(product.mrp)}')
+        lines[-1] += f' · MRP {_money(product.mrp)}'
     if product.category:
-        lines.append(f'Category: {product.category}')
+        lines.append(product.category)
     if product.available is False:
         lines.append('Currently unavailable on source store')
     if detailed:
@@ -87,11 +95,11 @@ def _card_text(product, brand_number, detailed=False):
                 value = ', '.join(map(str, value[:8]))
             if value:
                 lines.append(f'{key.replace("_", " ").title()}: {str(value)[:120]}')
-    if product.description:
+    if detailed and product.description:
         lines.append('')
         lines.append(product.description[:430 if detailed else 170].strip())
     text = '\n'.join(lines)
-    return text[:990]
+    return text[:940] + f'\n\n{NAMES[brand_number - 1]} · Catalog preview'
 
 
 def _catalog_buttons(number, state):
@@ -111,7 +119,7 @@ def _catalog_buttons(number, state):
     return InlineKeyboardMarkup(buttons)
 
 
-async def _show_categories(update, context, number):
+async def _show_categories(update, context, number, *, edit=False):
     state = _state(update, context)
     brand = BRANDS[number - 1]
     categories = await asyncio.to_thread(_categories, brand)
@@ -122,13 +130,14 @@ async def _show_categories(update, context, number):
     page = state.get('category_page', 0)
     state['category_page'] = min(page, (len(categories) - 1) // PAGE_SIZE)
     overview = ', '.join((name or 'Other')[:60] for name, _ in categories[:6])
-    await update.effective_message.reply_text(
+    deliver = update.effective_message.edit_text if edit else update.effective_message.reply_text
+    await deliver(
         f'{NAMES[number - 1]}\nExplore {overview}.\n\nChoose a category below, or use /search to find a product.\nCatalog preview · checkout is unavailable.',
         reply_markup=_catalog_buttons(number, state),
     )
 
 
-async def _show_product(update, context, number, detailed=False):
+async def _show_product(update, context, number, detailed=False, *, edit=False):
     state = _state(update, context)
     ids = state.get('product_ids') or []
     if not ids:
@@ -147,24 +156,85 @@ async def _show_product(update, context, number, detailed=False):
          InlineKeyboardButton('Next ›', callback_data=f'demo:{number}:next')],
         [InlineKeyboardButton('Details' if not detailed else 'Summary',
                               callback_data=f'demo:{number}:{"summary" if detailed else "detail"}'),
-         InlineKeyboardButton('Categories', callback_data=f'demo:{number}:back')],
+         InlineKeyboardButton('Browse 9', callback_data=f'demo:{number}:picker:{index // PICKER_SIZE}')],
+        [InlineKeyboardButton('Categories', callback_data=f'demo:{number}:back')],
     ]
     markup = InlineKeyboardMarkup(buttons)
     caption = _card_text(product, number, detailed)
     path = ROOT / product.demo_image if product.demo_image else None
+    photo = None
     if path and path.is_file() and path.resolve().is_relative_to(ROOT.resolve()):
         try:
             photo = InputFile(await asyncio.to_thread(path.read_bytes), filename=path.name)
-            await update.effective_message.reply_photo(photo, caption=caption, reply_markup=markup)
-            return
-        except (OSError, TelegramError) as error:
-            logger.warning('Preview photo unavailable; sending text card (%s)', type(error).__name__)
-    await update.effective_message.reply_text(caption, reply_markup=markup)
+        except OSError as error:
+            logger.warning('Preview image file unavailable (%s)', type(error).__name__)
+    message = update.effective_message
+    if edit:
+        # Details only change the caption. Moving to another product replaces the
+        # image and caption together; failures leave the prior card in place.
+        if not message.photo:
+            # A text fallback stays text; some Telegram servers reject adding
+            # media to an existing text message. Never abandon its navigation.
+            delivered = await message.edit_text(caption, reply_markup=markup)
+        elif update.callback_query.data.rsplit(':', 1)[-1] in {'detail', 'summary'}:
+            delivered = await message.edit_caption(caption=caption, reply_markup=markup)
+        elif photo:
+            delivered = await message.edit_media(InputMediaPhoto(photo, caption=caption), reply_markup=markup)
+        elif message.photo:
+            placeholder = InputFile(await asyncio.to_thread(NO_PHOTO.read_bytes), filename=NO_PHOTO.name)
+            delivered = await message.edit_media(
+                InputMediaPhoto(placeholder, caption=caption + '\nPhoto unavailable.'), reply_markup=markup)
+        else:
+            delivered = await message.edit_text(caption, reply_markup=markup)
+    else:
+        delivered = None
+        if photo:
+            try:
+                delivered = await message.reply_photo(photo, caption=caption, reply_markup=markup)
+            except TelegramError as error:
+                logger.warning('Preview photo unavailable; sending text card (%s): %s',
+                               type(error).__name__, _delivery_error(error))
+        if delivered is None:
+            delivered = await message.reply_text(caption, reply_markup=markup)
+    state['card_message_id'] = delivered.message_id
+    state.pop('picker_ids', None)
+
+
+def _picker_products(brand, ids):
+    with Session() as session:
+        products = session.scalars(select(DemoProduct).where(
+            DemoProduct.brand == brand, DemoProduct.id.in_(ids))).all()
+        by_id = {product.id: product for product in products}
+        return [by_id[product_id] for product_id in ids if product_id in by_id]
+
+
+async def _show_picker(update, context, number, page):
+    state = _state(update, context)
+    ids = state.get('product_ids') or []
+    page = max(0, min(page, (len(ids) - 1) // PICKER_SIZE))
+    start = page * PICKER_SIZE
+    products = await asyncio.to_thread(_picker_products, BRANDS[number - 1], ids[start:start + PICKER_SIZE])
+    buttons = [[InlineKeyboardButton(
+        f'{product.name[:42]} · {_money(product.price)}', callback_data=f'demo:{number}:pick:{product.id}')]
+        for product in products]
+    navigation = []
+    if page:
+        navigation.append(InlineKeyboardButton('‹ Previous 9', callback_data=f'demo:{number}:picker:{page - 1}'))
+    if start + PICKER_SIZE < len(ids):
+        navigation.append(InlineKeyboardButton('Next 9 ›', callback_data=f'demo:{number}:picker:{page + 1}'))
+    if navigation:
+        buttons.append(navigation)
+    buttons.append([InlineKeyboardButton('Back to product', callback_data=f'demo:{number}:summary'),
+                    InlineKeyboardButton('Categories', callback_data=f'demo:{number}:back')])
+    await update.effective_message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(buttons))
+    state['picker_ids'] = [product.id for product in products]
 
 
 async def _show_search(update, context, number, query):
     state = _state(update, context)
     result = await asyncio.to_thread(search_demo_catalog, query, BRANDS[number - 1])
+    state.pop('card_message_id', None)
+    state.pop('picker_ids', None)
     state.update(product_ids=[hit.product.id for hit in result.hits], index=0,
                  choice_message_id=None)
     if result.suggestions_only:
@@ -242,22 +312,38 @@ async def demo_callback(update, context):
     if state.get('brand') != BRANDS[number - 1]:
         await query.answer('Use /start to browse this catalog again.', show_alert=True)
         return
+    card_actions = {'next', 'prev', 'detail', 'summary', 'picker', 'pick'}
+    if action in card_actions and state.get('card_message_id') != update.effective_message.message_id:
+        await query.answer('This card is out of date. Open a product from your latest search.', show_alert=True)
+        return
+    before = dict(state)
     if action == 'choose':
         product_id = int(parts[3])
         if (state.get('choice_message_id') != update.effective_message.message_id
                 or product_id not in state.get('product_ids', [])):
             await query.answer('Please search again for current matches.', show_alert=True)
             return
-        state.update(product_ids=[product_id], index=0, choice_message_id=None)
+        state.update(index=state['product_ids'].index(product_id), choice_message_id=None)
     state.pop('search_requested_at', None)
     await query.answer()
     if action == 'noop':
         return
     if action == 'cats':
         state['category_page'] = int(parts[3])
-        await _show_categories(update, context, number)
-        await _retire_buttons(query)
+        await _show_categories(update, context, number, edit=True)
         return
+    if action == 'picker':
+        try:
+            await _show_picker(update, context, number, int(parts[3]))
+        except TelegramError:
+            await query.answer('Couldn’t open the product list. Please try again.', show_alert=True)
+        return
+    if action == 'pick':
+        product_id = int(parts[3])
+        if product_id not in state.get('picker_ids', []):
+            await query.answer('Please choose a product from the current list.', show_alert=True)
+            return
+        state['index'] = state['product_ids'].index(product_id)
     if action == 'cat':
         categories = state.get('categories') or []
         index = int(parts[3])
@@ -272,8 +358,24 @@ async def demo_callback(update, context):
         state['index'] = state.get('index', 0) + 1
     elif action == 'prev':
         state['index'] = state.get('index', 0) - 1
-    await _show_product(update, context, number, detailed=action == 'detail')
-    await _retire_buttons(query)
+    try:
+        await _show_product(update, context, number, detailed=action == 'detail', edit=action in card_actions)
+    except BadRequest as error:
+        if 'message is not modified' in str(error).lower():
+            return
+        state.clear()
+        state.update(before)
+        logger.warning('Product card edit rejected (%s): %s', type(error).__name__, _delivery_error(error))
+        await query.answer('Couldn’t update this card. Please try again.', show_alert=True)
+        return
+    except TelegramError as error:
+        state.clear()
+        state.update(before)
+        logger.warning('Product card delivery failed (%s): %s', type(error).__name__, _delivery_error(error))
+        await query.answer('Couldn’t update this card. Please try again.', show_alert=True)
+        return
+    if action not in card_actions:
+        await _retire_buttons(query)
 
 
 async def demo_text_search(update, context):
@@ -309,6 +411,8 @@ async def demo_text_search(update, context):
         await _show_categories(update, context, number)
         answer = 'Showing store categories.'
     elif reply.products:
+        state.pop('card_message_id', None)
+        state.pop('picker_ids', None)
         state.update(product_ids=[product['id'] for product in reply.products], index=0, choice_message_id=None)
         label = ('These are the closest matches. Which one would you like to see?' if reply.related
                  else 'Which product would you like to see?')
@@ -332,6 +436,6 @@ demo_handlers = [
     CommandHandler('demo', demo_command),
     CommandHandler('search', demo_search_command),
     CommandHandler('cancel', demo_cancel_command),
-    CallbackQueryHandler(demo_callback, pattern=r'^demo:[1-5]:(?:choose:\d+|cat:\d+|cats:\d+|next|prev|detail|summary|back|noop)$'),
+    CallbackQueryHandler(demo_callback, pattern=r'^demo:[1-5]:(?:picker:\d+|pick:\d+|choose:\d+|cat:\d+|cats:\d+|next|prev|detail|summary|back|noop)$'),
     MessageHandler(filters.TEXT & ~filters.COMMAND, demo_text_search),
 ]
