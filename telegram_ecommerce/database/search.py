@@ -54,7 +54,18 @@ def _search_words(phrase):
     return words
 
 
+SPELLING_PAIRS = (('organizer', 'organiser'), ('organizers', 'organisers'),
+                  ('color', 'colour'), ('colors', 'colours'), ('gray', 'grey'))
+SPELLING_ALIASES = {word: partner for pair in SPELLING_PAIRS
+                    for word, partner in (pair, pair[::-1])}
+
+
 def _lexical(field, word):
+    words = (word, SPELLING_ALIASES[word]) if word in SPELLING_ALIASES else (word,)
+    return or_(*[_lexical_word(field, variant) for variant in words])
+
+
+def _lexical_word(field, word):
     return or_(
         func.to_tsvector(text("'simple'"), field).op('@@')(
             func.plainto_tsquery(text("'simple'"), word)),
@@ -159,10 +170,13 @@ def search_catalog(query, limit=10):
 DEMO_FIELD_WEIGHTS = {'name': 10.0, 'brand': 6.0, 'category': 5.0, 'description': 1.0}
 
 
-def search_demo_catalog(query, brand, limit=50):
+def search_demo_catalog(query, brand, limit=50, *, category=None):
     """Use shared relevance rules within one read-only merchant snapshot."""
+    predicates = (DemoProduct.brand == brand,)
+    if category:
+        predicates += (DemoProduct.category == category,)
     return _search_catalog(query, limit, model=DemoProduct, weights=DEMO_FIELD_WEIGHTS,
-                           predicates=(DemoProduct.brand == brand,))
+                           predicates=predicates)
 
 
 def _search_catalog(query, limit, *, model=Product, weights=FIELD_WEIGHTS, predicates=None):
