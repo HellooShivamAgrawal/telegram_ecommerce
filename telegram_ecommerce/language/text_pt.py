@@ -1,20 +1,20 @@
 
 text_pt = ({
     "start" : 
-"""Olá, eu sou um bot que irá te ajudar a fazer compras nesse e-commerce.
-Digite /show_categories para ver as categorias
-Digite /register para criar uma conta
-Ou digite /help para mais informações.""",
+"""Diga o que procura ou peça para adicionar um produto ao carrinho desta conversa.
+Use /cart para ver e editar o carrinho, /show_categories para navegar e /help para mais comandos.""",
     "start_description" : "Uma mensagem de boas vindas.",
     "help" : 
 
-"""A seguir são instruções de como usar esse bot
+"""Pergunte sobre produtos na conversa, por exemplo: "Adicione dois cadernos ao carrinho."
+/cart — ver o carrinho desta conversa; /cart help — comandos de edição
+/show_categories — navegar pelas categorias
+/search — pesquisar no catálogo
+/cancel — sair da navegação do catálogo
+/register — criar uma conta antes de comprar
+/language — escolher o idioma
 
-Digite /show_categories para ver produtos por categoria
-
-Digite /search para pesquisar por algum produto.
-
-Para fazer compras você precisar criar uma conta, para fazer isso digite /register.""",
+Os membros do grupo compartilham um carrinho. Os itens não reservam estoque; a compra continua pelo fluxo existente de um produto.""",
     "help_description" : "A long message with all commands avaible for you, and how to use them.",
     "help_admin":
 """
@@ -32,7 +32,39 @@ Para adicionar outros administradores você pode usar o comando:
 """,
     "_language_name" : "Português",
     "language_enter_code" : "Digite uma tag de idioma disponível, como en ou pt.",
-    "catalog_assistant_unavailable" : "O assistente de compras está indisponível no momento. Use /search ou /show_categories.",
+    "catalog_assistant_unavailable" : "O assistente de compras está indisponível no momento. Use /search ou /show_categories. Se pediu uma alteração no carrinho, confira /cart antes de tentar novamente.",
+    "assistant_message_too_long": "Limite seu pedido de compras a 1.000 caracteres.",
+    "assistant_cart_saved": "As alterações no carrinho foram salvas, mas não consegui concluir a resposta. Use /cart para conferir seu carrinho.",
+    "assistant_cart_partial": "Algumas alterações foram salvas, mas não consegui concluir o pedido inteiro. Confira /cart antes de tentar novamente.",
+    "assistant_cart_rejected": "Não consegui fazer essa alteração. Seu carrinho não foi alterado. Informe o produto e a quantidade ou use /cart help.",
+    "activity_thinking": "Pensando…",
+    "activity_searching": "Pesquisando no catálogo…",
+    "activity_finding": "Procurando {product}…",
+    "activity_categories": "Consultando categorias…",
+    "activity_checking": "Consultando detalhes do produto…",
+    "activity_checking_product": "Consultando {product}…",
+    "activity_cart": "Abrindo seu carrinho…",
+    "activity_adding": "Adicionando ao seu carrinho…",
+    "activity_adding_product": "Adicionando {product} ao seu carrinho…",
+    "activity_updating": "Atualizando seu carrinho…",
+    "activity_updating_product": "Atualizando {product} no seu carrinho…",
+    "activity_removing": "Removendo do seu carrinho…",
+    "activity_removing_product": "Removendo {product} do seu carrinho…",
+    "activity_clearing_cart": "Esvaziando seu carrinho…",
+    "cart_description": "Veja e edite o carrinho desta conversa",
+    "cart_heading": "Carrinho desta conversa",
+    "cart_empty": "O carrinho desta conversa está vazio. Peça para adicionar um produto ou use /cart add ID_DO_PRODUTO QUANTIDADE.",
+    "cart_total": "Total: {currency} {total}",
+    "cart_stock_changed": "Apenas {quantity} disponíveis no momento.",
+    "cart_no_reservation": "Os preços são os atuais. Itens no carrinho não reservam estoque.",
+    "cart_usage": "Comandos do carrinho:\n/cart — ver carrinho\n/cart add ID_DO_PRODUTO [QUANTIDADE]\n/cart set ID_DO_PRODUTO QUANTIDADE (0 remove o item)\n/cart remove ID_DO_PRODUTO\n/cart clear\n\nTodos nesta conversa compartilham o mesmo carrinho.",
+    "cart_invalid_quantity": "Use uma quantidade de 1 a 99. Use /cart set ID_DO_PRODUTO 0 para remover um item.",
+    "cart_insufficient_stock": "Não há estoque suficiente para essa quantidade. Seu carrinho não foi alterado.",
+    "cart_product_not_found": "Esse produto não foi encontrado. Use /search para procurar um produto primeiro.",
+    "cart_full": "Um carrinho pode conter até 50 produtos diferentes. Remova um antes de adicionar outro.",
+    "cart_request_conflict": "Esse pedido já foi usado para outra alteração. Confira /cart antes de enviar um novo comando.",
+    "cart_error": "Não consegui alterar o carrinho. Confira os comandos com /cart help.",
+    "cart_unavailable": "O carrinho está indisponível no momento. Confira /cart antes de repetir uma alteração.",
     "catalog_assistant_prompt" : "Diga que tipo de produto você está procurando.",
     "choose_language" : "Qual é sua linguagem?",
     "selected_language" : "Linguagem selecionada.",

@@ -1,21 +1,20 @@
 
 text_en = ({
     "start" : 
-"""hello, I'm a bot that will help you buy products in this e-commerce. 
-type /show_categories to see categories.
-type /register to autenticate your account.
-type /help for more information.""",
+"""Tell me what you're looking for, or ask me to add a product to this chat's cart.
+Use /cart to view and edit the cart, /show_categories to browse, and /help for more commands.""",
     "start_description" : "A wellcome message if you dont known this bot",
     "help" : 
 
-"""The fallowing are instructions of how use this bot:
+"""Ask about products in ordinary chat, for example: "Add two notebooks to my cart."
+/cart — view this chat's cart; /cart help — edit commands
+/show_categories — browse categories
+/search — search the catalogue
+/cancel — leave catalogue browsing
+/register — create an account before checkout
+/language — choose your language
 
-type /show_categories to see products by category.
-
-To search to something you can use the command /search
-
-To buy something you need to register a password. 
-To do this type /login.""",
+Group members share one cart. Cart items do not reserve stock; checkout uses the existing single-product flow.""",
     "help_description" : "A long message with all commands avaible for you, and how to use them.",
     "help_admin":
 """
@@ -33,7 +32,39 @@ To add others admin you can use the command(Note: have sure that the people alre
 """,
     "_language_name" : "English",
     "language_enter_code" : "Enter a supported language tag, such as en or pt.",
-    "catalog_assistant_unavailable" : "The shopping assistant is unavailable right now. Please use /search or /show_categories.",
+    "catalog_assistant_unavailable" : "The shopping assistant is unavailable right now. Use /search or /show_categories. If you requested a cart change, check /cart before trying it again.",
+    "assistant_message_too_long": "Please keep shopping requests under 1,000 characters.",
+    "assistant_cart_saved": "Your cart changes were saved, but I could not finish the reply. Use /cart to check your cart.",
+    "assistant_cart_partial": "Some cart changes were saved, but I could not complete the whole request. Check /cart before trying again.",
+    "assistant_cart_rejected": "I could not make that cart change. Your cart was not changed. Please specify the product and quantity, or use /cart help.",
+    "activity_thinking": "Thinking…",
+    "activity_searching": "Searching catalogue…",
+    "activity_finding": "Finding {product}…",
+    "activity_categories": "Browsing categories…",
+    "activity_checking": "Checking product details…",
+    "activity_checking_product": "Checking {product}…",
+    "activity_cart": "Opening your cart…",
+    "activity_adding": "Adding to your cart…",
+    "activity_adding_product": "Adding {product} to your cart…",
+    "activity_updating": "Updating your cart…",
+    "activity_updating_product": "Updating {product} in your cart…",
+    "activity_removing": "Removing from your cart…",
+    "activity_removing_product": "Removing {product} from your cart…",
+    "activity_clearing_cart": "Clearing your cart…",
+    "cart_description": "View and edit this chat's cart",
+    "cart_heading": "This chat's cart",
+    "cart_empty": "This chat's cart is empty. Ask me to add a product, or use /cart add PRODUCT_ID QUANTITY.",
+    "cart_total": "Total: {currency} {total}",
+    "cart_stock_changed": "Only {quantity} currently available.",
+    "cart_no_reservation": "Prices are current. Cart items do not reserve stock.",
+    "cart_usage": "Cart commands:\n/cart — view cart\n/cart add PRODUCT_ID [QUANTITY]\n/cart set PRODUCT_ID QUANTITY (0 removes it)\n/cart remove PRODUCT_ID\n/cart clear\n\nEveryone in this chat shares the same cart.",
+    "cart_invalid_quantity": "Use a quantity from 1 to 99. Use /cart set PRODUCT_ID 0 to remove an item.",
+    "cart_insufficient_stock": "There is not enough stock for that quantity. Your cart was not changed.",
+    "cart_product_not_found": "That product was not found. Use /search to find a product first.",
+    "cart_full": "A cart can contain at most 50 different products. Remove one before adding another.",
+    "cart_request_conflict": "That request has already been used for another change. Check /cart before sending a new command.",
+    "cart_error": "I could not make that cart change. Check the command with /cart help.",
+    "cart_unavailable": "The cart is unavailable right now. Check /cart before repeating a change.",
     "catalog_assistant_prompt" : "Tell me what kind of product you are looking for.",
     "choose_language" : "What is your language?",
     "selected_language" : "Selected language.",

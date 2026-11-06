@@ -157,10 +157,6 @@ show_categories = ConversationHandler(
                 get_list_of_products)
             ],
         SHOW_LIST_OF_PRODUCTS : [
-            MessageHandler(
-                filters.TEXT, 
-                show_list_of_products
-                ),
             CallbackQueryHandler(
                 catch_next, 
                 pattern = pattern_identifier +
@@ -185,7 +181,7 @@ show_categories = ConversationHandler(
                 PATTERN_TO_CATCH_THE_BUY_BUTTON)
             ]
         },
-    fallbacks = [MessageHandler(filters.ALL, cancel_show_categories)]
+    fallbacks = [CommandHandler("cancel", cancel_show_categories)]
     )
 
 
