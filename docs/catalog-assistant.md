@@ -8,7 +8,13 @@ the assistant. Commands, admin changes, checkout, and payment use deterministic
 Telegram handlers.
 
 Set `OPENAI_API_KEY` in the ignored `.env` file. `OPENAI_MODEL` defaults to
-`gpt-5.4-mini`. Apply `alembic upgrade head` before starting the updated bot;
+`gpt-6.1-terra` for shopping and tool use; `OPENAI_INTENT_MODEL` defaults to
+`gpt-6-luna` for the isolated intent check. Both use Responses and support strict
+function calling and structured output. `OPENAI_REASONING_EFFORT=none` preserves
+the previous effective setting for this bounded task. If changing models,
+choose an effort they support. Setting both model variables to `gpt-6-luna`
+is also supported, but validate your shopping flows before deploying a change.
+Apply `alembic upgrade head` before starting the updated bot;
 the cart migration is `14b8c5f7a2d1`. With Docker, run
 `docker compose run --rm app alembic upgrade head`. Restart the app after upgrading.
 
@@ -90,4 +96,6 @@ to the bot under its Telegram privacy settings.
 
 API references: [function calling](https://developers.openai.com/api/docs/guides/function-calling),
 [structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs),
+[GPT-6.1 Terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra),
+[GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna),
 and [Telegram message editing](https://core.telegram.org/bots/api#editmessagetext).
