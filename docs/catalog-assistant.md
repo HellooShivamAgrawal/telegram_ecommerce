@@ -14,6 +14,9 @@ function calling and structured output. `OPENAI_REASONING_EFFORT=none` preserves
 the previous effective setting for this bounded task. If changing models,
 choose an effort they support. Setting both model variables to `gpt-6-luna`
 is also supported, but validate your shopping flows before deploying a change.
+An optional [Decisions routing experiment](decision-routing.md) can select
+context and a fast read model. It is disabled by default and does not replace
+the existing cart-intent check.
 Apply `alembic upgrade head` before starting the updated bot;
 the cart migration is `14b8c5f7a2d1`. With Docker, run
 `docker compose run --rm app alembic upgrade head`. Restart the app after upgrading.
@@ -54,7 +57,8 @@ A separate, cached-per-turn intent check reads only the current user message,
 without catalog text or conversation history, before any write. Its strict
 structured output limits which cart operations can run. It is an additional
 model-based check, not a proof that arbitrary model output is correct.
-If a requested change has no successful write, generated success claims are
+If the current-message intent check identifies a requested change and there is
+no successful write, generated success claims are
 replaced with a localized failure message. Invalid calls and rejected mutations
 also stop with a localized failure message.
 If earlier writes succeeded, the reply explicitly says the request was partial.
