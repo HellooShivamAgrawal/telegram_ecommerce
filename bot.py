@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 load_dotenv()
 if not environ.get("BOT_TOKEN"):
     raise SystemExit("Set BOT_TOKEN in .env before starting the Telegram bot.")
+from telegram import MenuButtonWebApp, WebAppInfo
 from telegram.ext import ApplicationBuilder
 from telegram.error import InvalidToken
 
@@ -18,6 +19,9 @@ from telegram_ecommerce.handlers import (
 async def post_init(app):
     commands = demo_public_commands_descriptions if environ.get('DEMO_BRAND') else all_public_commands_descriptions
     await app.bot.set_my_commands(commands)
+    from telegram_ecommerce.miniapp.links import mini_app_url
+    if mini_app_url():
+        await app.bot.set_chat_menu_button(menu_button=MenuButtonWebApp(text='Shop', web_app=WebAppInfo(mini_app_url())))
 
 def main():
     app = ApplicationBuilder().token(bot_token).post_init(post_init).build()

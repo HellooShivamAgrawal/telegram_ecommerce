@@ -16,6 +16,25 @@ services:
     networks:
       - app-network
 
+  catalog-web:
+    image: telegram-ecommerce-app:local
+    profiles: [miniapp]
+    command: [python, -m, telegram_ecommerce.miniapp.server]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+    ports:
+      - "127.0.0.1:${MINI_APP_PORT:-8088}:8080"
+    volumes:
+      - ./data/demo_catalogs:/app/data/demo_catalogs:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - app-network
+
   db:
     image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     environment:

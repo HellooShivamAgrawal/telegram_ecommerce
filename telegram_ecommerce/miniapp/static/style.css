@@ -1,0 +1,385 @@
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #222721;
+  background: #f8f7f4;
+  font-synthesis: none;
+  --accent: #344c37;
+  --line: #dedfd7;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+button,
+input,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+button {
+  font: inherit;
+  cursor: pointer;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+  outline: 3px solid #8aaf91;
+  outline-offset: 3px;
+}
+header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #f8f7f4f5;
+  backdrop-filter: blur(16px);
+  padding: 24px max(20px, calc((100vw - 1100px) / 2)) 0;
+  border-bottom: 1px solid var(--line);
+}
+.brand-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+#brand {
+  text-decoration: none;
+  color: inherit;
+  font-size: 27px;
+  font-weight: 760;
+  letter-spacing: -1.3px;
+}
+#brand span {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  font-weight: 400;
+  margin-top: 3px;
+}
+.edition {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #646c5e;
+}
+#search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 12px;
+  padding: 5px 6px 5px 14px;
+}
+#search > span {
+  font-size: 29px;
+  line-height: 1;
+}
+input {
+  font: inherit;
+  min-width: 0;
+  flex: 1;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  padding: 9px 0;
+  font-size: 14px;
+  color: inherit;
+}
+#search button {
+  background: var(--accent);
+  color: white;
+  border: 0;
+  border-radius: 8px;
+  padding: 11px 14px;
+  font-size: 12px;
+}
+nav {
+  display: flex;
+  gap: 8px;
+  overflow: auto;
+  padding: 16px 0;
+  scrollbar-width: none;
+}
+nav button {
+  flex-shrink: 0;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  background: transparent;
+  border-radius: 24px;
+  padding: 9px 15px;
+  font-size: 12px;
+  color: #50564d;
+}
+nav button[aria-pressed="true"] {
+  background: #283c2c;
+  border-color: #283c2c;
+  color: #fff;
+}
+main {
+  max-width: 1140px;
+  padding: 25px 20px 40px;
+  margin: auto;
+}
+.collection {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  margin: 6px 0 24px;
+}
+.eyebrow {
+  font-size: 9px;
+  letter-spacing: 1.8px;
+  color: #65705e;
+  margin: 0 0 9px;
+}
+h1 {
+  font-size: 30px;
+  font-weight: 550;
+  letter-spacing: -1.2px;
+  margin: 0;
+}
+#count {
+  font-size: 12px;
+  color: #70766c;
+  padding-bottom: 4px;
+  white-space: nowrap;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 28px 18px;
+}
+.card {
+  display: block;
+  text-align: left;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: inherit;
+  min-width: 0;
+}
+.photo {
+  aspect-ratio: 1;
+  background: #eeeee8;
+  border-radius: 14px;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transition: transform 0.2s;
+}
+.card:hover img {
+  transform: scale(1.035);
+}
+.photo.unavailable:after {
+  content: "Photo unavailable";
+  font-size: 12px;
+  color: #777;
+}
+.photo.unavailable img {
+  display: none;
+}
+.card small {
+  display: block;
+  color: #777e70;
+  font-size: 10px;
+  margin: 12px 0 6px;
+  letter-spacing: 0.4px;
+}
+.card h2 {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.45;
+  margin: 0 0 7px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 40px;
+}
+.price {
+  font-size: 14px;
+  font-weight: 650;
+}
+.price del {
+  font-weight: 400;
+  color: #85897f;
+  font-size: 11px;
+  margin-left: 7px;
+}
+.tag {
+  display: block;
+  font-size: 10px;
+  color: #725c35;
+  margin-top: 6px;
+}
+#status {
+  font-size: 13px;
+  color: #68715e;
+}
+#status:empty {
+  display: none;
+}
+#more,
+#retry {
+  display: block;
+  margin: 30px auto 0;
+  padding: 13px 30px;
+  border-radius: 25px;
+  background: transparent;
+  border: 1px solid #809079;
+  color: #344c37;
+}
+button[hidden] {
+  display: none !important;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+footer {
+  text-align: center;
+  font-size: 11px;
+  color: #73796c;
+  margin-top: 40px;
+}
+dialog {
+  border: 0;
+  border-radius: 24px 24px 0 0;
+  padding: 0 0 24px;
+  max-width: 540px;
+  width: 100%;
+  max-height: 92dvh;
+  position: fixed;
+  inset: auto 0 0;
+  margin: 0 auto;
+  overflow: auto;
+  background: #f8f7f4;
+  color: #222721;
+}
+dialog::backdrop {
+  background: #14201699;
+}
+.close {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  border: 0;
+  border-radius: 50%;
+  background: #fffc;
+  z-index: 2;
+  width: 40px;
+  height: 40px;
+  font-size: 28px;
+}
+#detail-content .photo {
+  border-radius: 0;
+  max-height: 46dvh;
+}
+#detail-content section {
+  padding: 24px;
+}
+#detail-content h2 {
+  font-size: 23px;
+  letter-spacing: -0.6px;
+  margin: 8px 0 13px;
+}
+#detail-content p {
+  font-size: 14px;
+  line-height: 1.7;
+  color: #606957;
+  white-space: pre-line;
+}
+#detail-content small {
+  font-size: 11px;
+  color: #66765d;
+}
+#ask {
+  display: block;
+  margin: 0 24px;
+  width: calc(100% - 48px);
+  background: var(--accent);
+  color: white;
+  border: 0;
+  border-radius: 12px;
+  padding: 16px;
+}
+#toast {
+  position: fixed;
+  bottom: 22px;
+  left: 20px;
+  right: 20px;
+  background: #253c2d;
+  color: #fff;
+  padding: 16px;
+  border-radius: 12px;
+  z-index: 8;
+  font-size: 13px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+@media (max-width: 560px) {
+  header {
+    padding: 20px 16px 0;
+  }
+  .edition {
+    font-size: 8px;
+    letter-spacing: 1px;
+  }
+  .brand-line {
+    margin-bottom: 20px;
+  }
+  main {
+    padding: 22px 16px 30px;
+  }
+  h1 {
+    font-size: 26px;
+  }
+  .grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 22px 10px;
+  }
+  .card h2 {
+    font-size: 12px;
+    min-height: 35px;
+  }
+  .price {
+    font-size: 12px;
+  }
+  .price del {
+    display: block;
+    margin: 3px 0 0;
+    font-size: 10px;
+  }
+  .card small {
+    font-size: 9px;
+  }
+  .photo {
+    border-radius: 12px;
+  }
+  #count {
+    font-size: 10px;
+  }
+  .collection {
+    gap: 10px;
+  }
+  #search button {
+    padding: 11px 10px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}

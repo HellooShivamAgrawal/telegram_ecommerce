@@ -7,7 +7,7 @@ from os import environ
 from pathlib import Path
 
 from sqlalchemy import func, select
-from telegram import ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputMediaPhoto
+from telegram import ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputMediaPhoto, WebAppInfo
 from telegram.error import BadRequest, TelegramError
 from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
@@ -16,6 +16,7 @@ from telegram_ecommerce.database.search import search_demo_catalog
 from telegram_ecommerce.agent.routing import answer_shopping_request
 from telegram_ecommerce.agent.progress import ActivityMessage
 from telegram_ecommerce.utils.log import logger
+from telegram_ecommerce.miniapp.links import mini_app_url
 
 
 BRANDS = ('dailyobjects', 'blue_tokai', 'nicobar', 'ellementry', 'jaipur_rugs')
@@ -116,6 +117,8 @@ def _catalog_buttons(number, state):
         navigation.append(InlineKeyboardButton('More categories ›', callback_data=f'demo:{number}:cats:{page + 1}'))
     if navigation:
         buttons.append(navigation)
+    if mini_app_url():
+        buttons.insert(0, [InlineKeyboardButton('Open shop · photos & search', web_app=WebAppInfo(mini_app_url()))])
     return InlineKeyboardMarkup(buttons)
 
 
@@ -129,6 +132,10 @@ async def _show_categories(update, context, number, *, edit=False):
     state.update(brand=brand, categories=categories)
     page = state.get('category_page', 0)
     state['category_page'] = min(page, (len(categories) - 1) // PAGE_SIZE)
+    if mini_app_url():
+        deliver = update.effective_message.edit_text if edit else update.effective_message.reply_text
+        await deliver(f'{NAMES[number - 1]}\nFind your everyday essentials. Browse the shop or tell me what you’re looking for.\n\nCatalog preview · checkout is unavailable.', reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('Open shop', web_app=WebAppInfo(mini_app_url()))]]))
+        return
     overview = ', '.join((name or 'Other')[:60] for name, _ in categories[:6])
     deliver = update.effective_message.edit_text if edit else update.effective_message.reply_text
     await deliver(
@@ -159,15 +166,22 @@ async def _show_product(update, context, number, detailed=False, *, edit=False):
          InlineKeyboardButton('Browse 9', callback_data=f'demo:{number}:picker:{index // PICKER_SIZE}')],
         [InlineKeyboardButton('Categories', callback_data=f'demo:{number}:back')],
     ]
+    if mini_app_url():
+        buttons.insert(0, [InlineKeyboardButton('View photo grid', web_app=WebAppInfo(mini_app_url(q=state.get('search_query', ''), category=state.get('web_category', ''))))])
     markup = InlineKeyboardMarkup(buttons)
     caption = _card_text(product, number, detailed)
     path = ROOT / product.demo_image if product.demo_image else None
     photo = None
     if path and path.is_file() and path.resolve().is_relative_to(ROOT.resolve()):
         try:
-            photo = InputFile(await asyncio.to_thread(path.read_bytes), filename=path.name)
+            from telegram_ecommerce.miniapp.images import thumbnail
+            photo = InputFile(await asyncio.to_thread(thumbnail, getattr(product, 'original_image', None) or product.demo_image, mark=bool(getattr(product, 'original_image', None))), filename='product.jpg')
         except OSError as error:
             logger.warning('Preview image file unavailable (%s)', type(error).__name__)
+    if photo and mini_app_url():
+        # Telegram fetches the small derivative itself, avoiding multipart uploads
+        # over the connection that has been failing TLS record validation.
+        photo = mini_app_url().rstrip('/') + f'/api/image/{product.id}'
     message = update.effective_message
     if edit:
         # Details only change the caption. Moving to another product replaces the
@@ -235,6 +249,7 @@ async def _show_search(update, context, number, query):
     result = await asyncio.to_thread(search_demo_catalog, query, BRANDS[number - 1])
     state.pop('card_message_id', None)
     state.pop('picker_ids', None)
+    state.update(search_query=query, web_category='')
     state.update(product_ids=[hit.product.id for hit in result.hits], index=0,
                  choice_message_id=None)
     if result.suggestions_only:
@@ -258,6 +273,14 @@ async def demo_command(update, context):
     state = _state(update, context)
     state.clear()
     state['brand'] = BRANDS[number - 1]
+    if context.args and len(context.args) == 1 and re.fullmatch(r'product_[0-9]+', context.args[0]):
+        product_id = int(context.args[0][8:])
+        if await asyncio.to_thread(_product, product_id, state['brand']):
+            state.update(categories=_categories(state['brand']), category_page=0, product_ids=[product_id], index=0)
+            await _show_product(update, context, number, detailed=True)
+        else:
+            await _show_categories(update, context, number)
+        return
     if context.args:
         query = ' '.join(context.args).strip()[:100]
         state.update(categories=_categories(state['brand']), category_page=0)
@@ -349,7 +372,8 @@ async def demo_callback(update, context):
         index = int(parts[3])
         if index >= len(categories):
             return
-        state.update(product_ids=_products(state['brand'], category=categories[index][0]), index=0)
+        state.update(product_ids=_products(state['brand'], category=categories[index][0]), index=0,
+                     search_query='', web_category=categories[index][0] or '')
     elif action == 'back':
         await _show_categories(update, context, number)
         await _retire_buttons(query)
