@@ -8,10 +8,14 @@ from sqlalchemy.exc import IntegrityError
 from telegram_ecommerce.database import models
 from telegram_ecommerce.database.models import Session
 from telegram_ecommerce.utils.utils import hash_password
-from telegram_ecommerce.utils.consts import admins
+
+
+_UNSET = object()
 
 
 def create_account(user, password):
+    from telegram_ecommerce.utils.consts import admins
+
     user_id = user.id
     username = user.username or str(user_id)
     # Telegram usernames can be changed or claimed by another account.
@@ -42,14 +46,45 @@ def add_category(name, description, tags=None, image_id=None):
         session.add(models.Category(name=name, description=description, tags=tags, image_id=image_id))
         session.commit()
 
+
+def _validate_product_search_metadata(*, brand=_UNSET, short_description=_UNSET, tags=_UNSET):
+    """Normalize optional merchant-authored search fields before writing."""
+    metadata = {}
+    for field, value, maximum in (
+        ('brand', brand, 80),
+        ('short_description', short_description, 200),
+        ('tags', tags, 500),
+    ):
+        if value is _UNSET:
+            continue
+        if value is not None:
+            if not isinstance(value, str):
+                raise ValueError(f'{field} must be text or None')
+            value = value.strip()
+            if '\x00' in value:
+                raise ValueError(f'{field} must not contain NUL characters')
+            if len(value) > maximum:
+                raise ValueError(f'{field} must contain at most {maximum} characters')
+            value = value or None
+        metadata[field] = value
+    return metadata
+
+
 def add_product(
         name, 
         description,
         unit_price=0, 
         quantity_in_stock=0, 
         quantity_purchased=0,
-        category_id=None, 
-        image_id=None):
+        category_id=None,
+        image_id=None,
+        *,
+        brand=None,
+        short_description=None,
+        tags=None):
+    metadata = _validate_product_search_metadata(
+        brand=brand, short_description=short_description, tags=tags,
+    )
     with Session() as session:
         session.add(models.Product(
             name=name,
@@ -58,9 +93,35 @@ def add_product(
             quantity_in_stock=quantity_in_stock,
             quantity_purchased=quantity_purchased,
             category_id=category_id,
-            image_id=image_id
+            image_id=image_id,
+            **metadata,
         ))
         session.commit()
+
+
+def update_product_search_metadata(
+        product_id, *, brand=_UNSET, short_description=_UNSET, tags=_UNSET):
+    """Patch supplied search metadata; None or blank text clears a field.
+
+    Return False when the product does not exist, otherwise True. Invalid input
+    raises ValueError before any changes are written. Omitted fields are kept.
+    PostgreSQL regenerates the indexed search text atomically with the update.
+    """
+    if type(product_id) is not int or not 0 < product_id < 2**31:
+        raise ValueError('product_id must be a positive 32-bit integer')
+    metadata = _validate_product_search_metadata(
+        brand=brand, short_description=short_description, tags=tags,
+    )
+    if not metadata:
+        raise ValueError('Supply at least one search metadata field')
+    with Session.begin() as session:
+        product = session.get(models.Product, product_id)
+        if product is None:
+            return False
+        for field, value in metadata.items():
+            setattr(product, field, value)
+        return True
+
 
 def add_orders(order_id, price, user_id, product_id, rating = None):
     with Session() as session:
