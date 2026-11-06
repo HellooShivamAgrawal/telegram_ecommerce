@@ -29,6 +29,18 @@
           autocomplete="off"
         /><button type="submit">Search</button>
       </form>
+      <div class="budget-filter">
+        <label for="max-price">Max item price ₹</label
+        ><input
+          id="max-price"
+          type="number"
+          inputmode="decimal"
+          min="0"
+          max="10000000"
+          step="0.01"
+          placeholder="Any price"
+        /><span>Delivery not included</span>
+      </div>
       <nav id="categories" aria-label="Product categories"></nav>
     </header>
     <main>
@@ -52,7 +64,8 @@
         ×
       </button>
       <div id="detail-content"></div>
-      <button id="ask">Open product in chat ↗</button>
+      <p id="handoff-note" class="handoff-note"></p>
+      <button id="ask">Continue in Telegram ↗</button>
     </dialog>
     <div id="toast" role="status" hidden></div>
   </body>

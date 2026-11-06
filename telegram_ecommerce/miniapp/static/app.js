@@ -6,12 +6,14 @@ tg?.expand();
 const initial = new URLSearchParams(location.search);
 let query = initial.get("q") || "",
   category = initial.get("category") || "",
+  maxPrice = initial.get("max_price") || "",
   page = 0,
   request = 0,
   controller,
   selected,
   botUsername = "";
 $("query").value = query;
+$("max-price").value = maxPrice;
 const money = (value) =>
   value === null
     ? "Price on request"
@@ -69,6 +71,34 @@ function detail(product) {
         "Ask us in chat for more information about this product.",
     ),
   );
+  const facts = product.facts || {};
+  if (Object.keys(facts.specifications || {}).length) {
+    body.append(el("h3", "Specifications"));
+    const specs = el("dl", null, "specs");
+    for (const [key, value] of Object.entries(facts.specifications))
+      specs.append(el("dt", key), el("dd", value));
+    body.append(specs);
+  }
+  if (facts.fit_note) body.append(el("p", facts.fit_note, "fit-note"));
+  if ((facts.highlights || []).length || (facts.features || []).length) {
+    const disclosure = el("details");
+    disclosure.append(el("summary", "More product information"));
+    const list = el("ul");
+    for (const text of [...(facts.highlights || []), ...(facts.features || [])])
+      list.append(el("li", text));
+    disclosure.append(list);
+    body.append(disclosure);
+  }
+  body.append(
+    el(
+      "p",
+      "Source catalog information. Prices and availability may change. This preview cannot calculate delivery or accept orders.",
+      "source-note",
+    ),
+  );
+  $("handoff-note").textContent = botUsername
+    ? `Continue with our catalog assistant @${botUsername} in Telegram. Checkout is unavailable in this preview.`
+    : "";
   content.append(body);
   $("detail").showModal();
   tg?.BackButton?.show();
@@ -105,6 +135,7 @@ async function load(append = false) {
     const params = new URLSearchParams({
       q: query,
       category,
+      max_price: maxPrice,
       page: String(page),
     });
     const response = await fetch("/api/catalog?" + params, {
@@ -120,7 +151,7 @@ async function load(append = false) {
       ? `Results for “${query}”`
       : category || "Good things. Daily.";
     $("count").textContent =
-      `${data.total}${data.search_limited ? "+" : ""} items`;
+      `${data.total}${data.search_limited ? "+" : ""} ${data.total === 1 ? "item" : "items"}`;
     $("categories").replaceChildren();
     for (const name of ["", ...data.categories.map((x) => x.name)]) {
       const button = el("button", name || "All essentials");
@@ -148,12 +179,12 @@ async function load(append = false) {
     }
     $("status").textContent = data.total
       ? ""
-      : "No products found. Try a shorter product name or another category.";
+      : (maxPrice ? "No products match this budget. Try increasing the maximum price, clearing it, or choosing another category." : "No products found. Try a shorter product name or another category.");
     $("more").hidden = !data.has_more;
     history.replaceState(
       null,
       "",
-      "/?" + new URLSearchParams({ q: query, category }),
+      "/?" + new URLSearchParams({ q: query, category, max_price: maxPrice }),
     );
   } catch (error) {
     if (error.name === "AbortError") return;
@@ -179,6 +210,12 @@ $("query").oninput = () => {
     page = 0;
     load();
   }, 300);
+};
+$("max-price").onchange = () => {
+  if (!$("max-price").reportValidity()) return;
+  maxPrice = $("max-price").value;
+  page = 0;
+  load();
 };
 $("more").onclick = () => {
   page++;

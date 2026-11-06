@@ -233,3 +233,23 @@ def test_miniapp_welcome_is_one_clear_action_and_deep_link_opens_product():
             assert demo._state(update, context)['product_ids'] == [5]
             show.assert_awaited_once_with(update, context, 1, detailed=True)
     asyncio.run(run())
+
+
+def test_selected_product_facts_work_without_ai_and_do_not_invent_fit():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    import time
+    async def run():
+        message=SimpleNamespace(text='Will this fit my 15-inch laptop, and what is delivery?', reply_text=AsyncMock())
+        update=SimpleNamespace(effective_message=message,effective_chat=SimpleNamespace(id=8001))
+        context=SimpleNamespace(user_data={})
+        demo._state(update,context).update(opened_product_id=4,opened_at=time.time())
+        product=SimpleNamespace(name='Laptop Bag',price=2499,details={'custom':{'dimensions':'10 x 40 x 42 cm'}})
+        with patch.object(demo,'ACTIVE_BRAND','dailyobjects'), patch.object(demo,'_product',return_value=product), \
+             patch.object(demo,'answer_shopping_request',new_callable=AsyncMock) as ai:
+            await demo.demo_text_search(update,context)
+        ai.assert_not_awaited()
+        reply=message.reply_text.call_args.args[0]
+        assert '10 x 40 x 42 cm' in reply and 'not internal' in reply
+        assert 'checkout total are not available' in reply
+    asyncio.run(run())

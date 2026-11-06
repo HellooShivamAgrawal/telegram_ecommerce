@@ -1,5 +1,7 @@
 # Launch readiness — November 7, 2026
 
+Latest update: see [customer journey handoff](customer-journey-handoff.md) for the Mini App, photo fixes, five blind personas, 287-test verification, and current blockers. The detailed table below records the earlier native-browser audit; its Mini App follow-up has since been implemented.
+
 **Decision: not ready for a public transactional launch.** The native preview
 browser is being prepared for review and a controlled demo. Passing automated
 checks does not establish live payment, fulfillment, or service reliability.

@@ -1,6 +1,20 @@
 # 🤖 Telegram e-commerce
 
 This is a Telegram bot made using Python and python-telegram-bot, with PostgreSQL for storage.
+## Current shopping experience
+
+The Telegram **Shop** button opens a six-product photo grid with categories, shared backend search, an optional maximum item price, and product detail sheets. Photos are compressed to 720px JPEGs; transparent originals use a light background. Product specifications and conflicting laptop-fit claims are shown explicitly. Details explain the handoff to the Telegram catalog assistant.
+
+Keyword searches and explicit price limits such as `blue backpack under 2500` work without model calls. Preview purchase/order questions and facts about a recently opened product also remain available during AI outages. Complex recommendations still require the configured OpenAI service; its current rate limit is a launch blocker.
+
+**Current deployment is a catalog preview, not a complete buying experience.** No checkout, payment, delivery total, or real order operation is enabled for demo products. Full buying readiness has not been established.
+
+- [Mini App setup](docs/catalog-mini-app.md)
+- [Customer journeys, fixes, and handoff](docs/customer-journey-handoff.md)
+- [Launch-readiness audit](docs/launch-readiness.md)
+
+Run `docker compose --profile miniapp up -d --build` after configuring `DEMO_BRAND`, `BOT_USERNAME`, and an HTTPS `MINI_APP_URL`. The web service binds to localhost port 8088; put it behind stable HTTPS hosting before launch. Temporary tunnels are owner previews only.
+
 ## 💖 All Contributors
 
 <a href="https://github.com/raulpy271/telegram_ecommerce/graphs/contributors">
