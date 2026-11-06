@@ -1,5 +1,7 @@
 import time
 import unicodedata
+from functools import wraps
+from secrets import token_hex
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -32,7 +34,8 @@ SELECT_SEARCH_CHOICE             ) = range(-1, 5)
 
 
 products_data_key = "list_of_products"
-pattern_identifier = "response_from_buttons_in_products_that_match"
+pattern_identifier = "search_product:"
+PRODUCT_CARD_PATTERN = r"^search_product:[0-9a-f]{12}:[1-9][0-9]{0,18}:"
 PATTERN_TO_CATCH_THE_PREVIUS_PRODUCT = 'previus_product'
 PATTERN_TO_CATCH_THE_NEXT_PRODUCT = 'next_product'
 PATTERN_TO_CATCH_THE_VIEW_DETAILS = 'product_details'
@@ -48,8 +51,35 @@ def _search_data(update, context):
     return context.user_data.setdefault(SEARCH_CHATS_KEY, {}).setdefault(update.effective_chat.id, {})
 
 
+def _product_prefix(data, product):
+    return f"{pattern_identifier}{data['generation']}:{product.id}:"
+
+
+async def reject_search_card(update, context):
+    await update.callback_query.answer(get_text("search_choice_stale", context), show_alert=True)
+    return None
+
+
+def _current_product_card(action):
+    """Bind every card action to the search and product that displayed it."""
+    def decorate(callback):
+        @wraps(callback)
+        async def checked(update, context):
+            data = _search_data(update, context)
+            products = data.get(products_data_key, {}).get("products")
+            if (not data.get("generation") or not isinstance(products, ListProductIterator)
+                    or products.is_empty()
+                    or update.callback_query.data != _product_prefix(data, products.actual()) + action):
+                return await reject_search_card(update, context)
+            return await callback(update, context)
+        return checked
+    return decorate
+
+
 def put_products_data_in_user_data(update, context):
-    _search_data(update, context)[products_data_key] = {
+    data = _search_data(update, context)
+    data["generation"] = token_hex(6)
+    data[products_data_key] = {
         "products": []
     }
 
@@ -71,6 +101,7 @@ def _choice_label(product):
 async def show_search_choices(update, context, products, *, activity=None, notice=None):
     """Offer a small set of related products without selecting or buying one."""
     data = _search_data(update, context)
+    data["generation"] = token_hex(6)
     products = list({product.id: product for product in products}.values())[:5]
     if not products:
         data.pop(SEARCH_CHOICES_KEY, None)
@@ -114,8 +145,9 @@ async def choose_search_product(update, context):
         return None
     products = ListProductIterator(product)
     products.next()
+    data["generation"] = token_hex(6)
     data[products_data_key] = {"products": products}
-    await send_a_detailed_product(update, context, product, pattern_identifier)
+    await send_a_detailed_product(update, context, product, _product_prefix(data, product))
     context.chat_data[PRODUCT_SELECTION_KEY] = {
         "id": product.id, "name": product.name, "selected_at": time.time(),
     }
@@ -149,36 +181,45 @@ async def get_list_of_products_that_match(update, context):
 
 
 async def show_list_of_product_that_match(update, context):
-    product = _search_data(update, context)[products_data_key]["products"].next()
+    data = _search_data(update, context)
+    product = data[products_data_key]["products"].next()
     markup = tamplate_for_show_a_list_of_products(
-        pattern_identifier, context)
+        _product_prefix(data, product), context)
     text = get_text_for_product(product, context)
     await send_product_card(update, product, text, markup)
     return SHOW_LIST_OF_PRODUCT_THAT_MATCH
 
 
+@_current_product_card(PATTERN_TO_CATCH_THE_PREVIUS_PRODUCT)
 async def catch_previus(update, context):
-    product = _search_data(update, context)[products_data_key]["products"].previus()
-    await send_a_product(update, context, product, pattern_identifier)
+    data = _search_data(update, context)
+    product = data[products_data_key]["products"].previus()
+    await send_a_product(update, context, product, _product_prefix(data, product))
     return SHOW_LIST_OF_PRODUCT_THAT_MATCH
 
 
+@_current_product_card(PATTERN_TO_CATCH_THE_NEXT_PRODUCT)
 async def catch_next(update, context):
-    product = _search_data(update, context)[products_data_key]["products"].next()
-    await send_a_product(update, context, product, pattern_identifier)
+    data = _search_data(update, context)
+    product = data[products_data_key]["products"].next()
+    await send_a_product(update, context, product, _product_prefix(data, product))
     return SHOW_LIST_OF_PRODUCT_THAT_MATCH
 
 
+@_current_product_card(PATTERN_TO_CATCH_THE_VIEW_DETAILS)
 async def catch_details(update, context):
-    product = _search_data(update, context)[products_data_key]["products"].actual()
-    await send_a_detailed_product(update, context, product, pattern_identifier)
+    data = _search_data(update, context)
+    product = data[products_data_key]["products"].actual()
+    await send_a_detailed_product(update, context, product, _product_prefix(data, product))
     return BUY_PROCESS 
 
 
+@_current_product_card(PATTERN_TO_CATCH_THE_BUY_BUTTON)
 @execute_if_user_exist
 async def send_a_shipping_message_callback(update, context):
-    product = _search_data(update, context)[products_data_key]["products"].actual()
-    await send_a_shipping_message(update, context, product, pattern_identifier)
+    data = _search_data(update, context)
+    product = data[products_data_key]["products"].actual()
+    await send_a_shipping_message(update, context, product, _product_prefix(data, product))
     return END
 
 
@@ -192,10 +233,11 @@ async def cancel_search(update, context):
 search_command = (
     CommandHandler("search", ask_for_term_to_search))
 search_choice_callback = CallbackQueryHandler(choose_search_product, pattern=r"^search_choice:")
+stale_card_callback = CallbackQueryHandler(reject_search_card, pattern=r"^search_product:")
 
 
 search = ConversationHandler(
-    entry_points = [search_command, search_choice_callback],
+    entry_points = [search_command, search_choice_callback, stale_card_callback],
     states = {
         SELECT_SEARCH_CHOICE: [search_choice_callback],
         ASK_FOR_TERM_TO_SEARCH : [
@@ -211,29 +253,29 @@ search = ConversationHandler(
         SHOW_LIST_OF_PRODUCT_THAT_MATCH : [
             CallbackQueryHandler(
                 catch_next, 
-                pattern = pattern_identifier +
-                PATTERN_TO_CATCH_THE_NEXT_PRODUCT),
+                pattern = PRODUCT_CARD_PATTERN +
+                PATTERN_TO_CATCH_THE_NEXT_PRODUCT + "$"),
             CallbackQueryHandler(
                 catch_previus, 
-                pattern = pattern_identifier +
-                PATTERN_TO_CATCH_THE_PREVIUS_PRODUCT),
+                pattern = PRODUCT_CARD_PATTERN +
+                PATTERN_TO_CATCH_THE_PREVIUS_PRODUCT + "$"),
             CallbackQueryHandler(
                 catch_details,
-                pattern = pattern_identifier +
-                PATTERN_TO_CATCH_THE_VIEW_DETAILS)
+                pattern = PRODUCT_CARD_PATTERN +
+                PATTERN_TO_CATCH_THE_VIEW_DETAILS + "$")
             ],
         BUY_PROCESS : [
             CallbackQueryHandler(
                 catch_previus, 
-                pattern = pattern_identifier +
-                PATTERN_TO_CATCH_THE_PREVIUS_PRODUCT),
+                pattern = PRODUCT_CARD_PATTERN +
+                PATTERN_TO_CATCH_THE_PREVIUS_PRODUCT + "$"),
             CallbackQueryHandler(
                 send_a_shipping_message_callback, 
-                pattern = pattern_identifier + 
-                PATTERN_TO_CATCH_THE_BUY_BUTTON)
+                pattern = PRODUCT_CARD_PATTERN +
+                PATTERN_TO_CATCH_THE_BUY_BUTTON + "$")
             ]
         },
-    fallbacks = [CommandHandler("cancel", cancel_search), search_choice_callback]
+    fallbacks = [CommandHandler("cancel", cancel_search), search_choice_callback, stale_card_callback]
     )
 
 

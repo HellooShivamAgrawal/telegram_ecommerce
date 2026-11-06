@@ -43,7 +43,89 @@ def update(*, chat_id=700, message_id=100, data=None):
                            effective_chat=SimpleNamespace(id=chat_id), effective_user=SimpleNamespace(id=700))
 
 
+def card_update(event, ctx, action):
+    data = ctx.user_data[search.SEARCH_CHATS_KEY][event.effective_chat.id]
+    current = data[search.products_data_key]["products"].actual()
+    event.callback_query = SimpleNamespace(data=search._product_prefix(data, current) + action, answer=AsyncMock())
+    return event
+
+
 class SearchChoiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_old_details_and_buy_cannot_target_a_new_selection(self):
+        for new_item in (product(8, "Pen"), product(7, "Notebook")):
+            with self.subTest(new_id=new_item.id):
+                event, ctx = update(), context()
+                old_item = product(7, "Notebook")
+                with patch.object(search, "get_available_product", return_value=old_item), patch.object(
+                    search, "send_a_detailed_product", new_callable=AsyncMock,
+                ):
+                    await search.show_search_choices(event, ctx, [old_item])
+                    await search.choose_search_product(update(data="search_choice:7"), ctx)
+                data = ctx.user_data[search.SEARCH_CHATS_KEY][700]
+                old_prefix = search._product_prefix(data, old_item)
+                await search.show_search_choices(event, ctx, [new_item])
+                with patch.object(search, "send_a_shipping_message", new_callable=AsyncMock) as checkout:
+                    self.assertIsNone(await search.send_a_shipping_message_callback(
+                        update(data=old_prefix + "buy_product"), ctx))
+                    checkout.assert_not_awaited()
+                with patch.object(search, "get_available_product", return_value=new_item), patch.object(
+                    search, "send_a_detailed_product", new_callable=AsyncMock,
+                ):
+                    await search.choose_search_product(update(data=f"search_choice:{new_item.id}"), ctx)
+                current_prefix = search._product_prefix(data, new_item)
+                self.assertNotEqual(old_prefix, current_prefix)
+                with patch.object(search, "send_a_detailed_product", new_callable=AsyncMock) as details, patch.object(
+                    search, "send_a_shipping_message", new_callable=AsyncMock,
+                ) as checkout, patch("telegram_ecommerce.filters.decorators.user_exist", return_value=True) as registered:
+                    old_details = update(data=old_prefix + "product_details")
+                    old_buy = update(data=old_prefix + "buy_product")
+                    self.assertIsNone(await search.catch_details(old_details, ctx))
+                    self.assertIsNone(await search.send_a_shipping_message_callback(old_buy, ctx))
+                    old_details.callback_query.answer.assert_awaited_once()
+                    old_buy.callback_query.answer.assert_awaited_once()
+                    details.assert_not_awaited()
+                    checkout.assert_not_awaited()
+                    registered.assert_not_called()
+                    await search.catch_details(update(data=current_prefix + "product_details"), ctx)
+                    await search.send_a_shipping_message_callback(update(data=current_prefix + "buy_product"), ctx)
+                self.assertIs(details.await_args.args[2], new_item)
+                self.assertIs(checkout.await_args.args[2], new_item)
+
+    async def test_old_navigation_and_details_are_rejected_after_current_product_changes(self):
+        event, ctx = update(), context()
+        search.put_products_data_in_user_data(event, ctx)
+        products = [product(7), product(8)]
+        with patch.object(search, "search_catalog", return_value=result(products, False)), patch.object(
+            search, "send_product_card", new_callable=AsyncMock,
+        ):
+            await search.get_list_of_products_that_match(event, ctx)
+        data = ctx.user_data[search.SEARCH_CHATS_KEY][700]
+        old_prefix = search._product_prefix(data, products[0])
+        with patch.object(search, "send_a_product", new_callable=AsyncMock) as card, patch.object(
+            search, "send_a_detailed_product", new_callable=AsyncMock,
+        ) as details:
+            await search.catch_next(update(data=old_prefix + "next_product"), ctx)
+            card.reset_mock()
+            for callback, action in ((search.catch_next, "next_product"),
+                                     (search.catch_previus, "previus_product"),
+                                     (search.catch_details, "product_details")):
+                self.assertIsNone(await callback(update(data=old_prefix + action), ctx))
+            card.assert_not_awaited()
+            details.assert_not_awaited()
+            self.assertIs(data[search.products_data_key]["products"].actual(), products[1])
+
+    def test_card_callbacks_fit_telegram_byte_limit_for_largest_database_id(self):
+        from telegram_ecommerce.tamplates.buttons import tamplate_for_show_a_detailed_product
+
+        item = product(9223372036854775807)
+        prefix = search._product_prefix({"generation": "a" * 12}, item)
+        for markup in (search.tamplate_for_show_a_list_of_products(prefix, context()),
+                       tamplate_for_show_a_detailed_product(prefix, context())):
+            for row in markup.inline_keyboard:
+                for button in row:
+                    self.assertLessEqual(len(button.callback_data.encode("utf-8")), 64)
+                    self.assertRegex(button.callback_data, search.PRODUCT_CARD_PATTERN)
+
     async def test_same_user_keeps_independent_choices_and_selections_in_two_chats(self):
         shared_user_data = {}
         first_ctx = SimpleNamespace(user_data=shared_user_data, chat_data={})
@@ -95,18 +177,18 @@ class SearchChoiceTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(search, "send_a_product", new_callable=AsyncMock) as card, patch.object(
             search, "send_a_detailed_product", new_callable=AsyncMock,
         ) as details:
-            await search.catch_next(first, first_ctx)
+            await search.catch_next(card_update(first, first_ctx, "next_product"), first_ctx)
             self.assertEqual(card.await_args.args[2].id, 8)
             self.assertEqual(buckets[701][search.products_data_key]["products"].actual().id, 9)
-            await search.catch_previus(first, first_ctx)
+            await search.catch_previus(card_update(first, first_ctx, "previus_product"), first_ctx)
             self.assertEqual(card.await_args.args[2].id, 7)
-            await search.catch_details(second, second_ctx)
+            await search.catch_details(card_update(second, second_ctx, "product_details"), second_ctx)
             self.assertEqual(details.await_args.args[2].id, 9)
         with patch("telegram_ecommerce.filters.decorators.user_exist", return_value=True), patch.object(
             search, "send_a_shipping_message", new_callable=AsyncMock,
         ) as checkout:
-            await search.send_a_shipping_message_callback(first, first_ctx)
-            await search.send_a_shipping_message_callback(second, second_ctx)
+            await search.send_a_shipping_message_callback(card_update(first, first_ctx, "buy_product"), first_ctx)
+            await search.send_a_shipping_message_callback(card_update(second, second_ctx, "buy_product"), second_ctx)
         self.assertEqual([call.args[2].id for call in checkout.await_args_list], [7, 9])
         await search.show_search_choices(first, first_ctx, first_products)
         await search.show_search_choices(second, second_ctx, second_products)
@@ -147,7 +229,7 @@ class SearchChoiceTests(unittest.IsolatedAsyncioTestCase):
         ) as card, patch.object(search, "send_a_product", new_callable=AsyncMock) as next_card:
             state = await search.get_list_of_products_that_match(event, ctx)
             self.assertEqual(card.await_args.args[1], products[0])
-            await search.catch_next(event, ctx)
+            await search.catch_next(card_update(event, ctx, "next_product"), ctx)
         self.assertEqual(state, search.SHOW_LIST_OF_PRODUCT_THAT_MATCH)
         self.assertEqual(next_card.await_args.args[2], products[1])
         self.assertNotIn(search.SEARCH_CHOICES_KEY, ctx.user_data.get(search.SEARCH_CHATS_KEY, {}).get(700, {}))
@@ -171,7 +253,8 @@ class SearchChoiceTests(unittest.IsolatedAsyncioTestCase):
         ) as details, patch.object(search, "send_a_shipping_message", new_callable=AsyncMock) as checkout:
             state = await search.choose_search_product(selected, ctx)
         lookup.assert_called_once_with(7)
-        details.assert_awaited_once_with(selected, ctx, refreshed, search.pattern_identifier)
+        data = ctx.user_data[search.SEARCH_CHATS_KEY][700]
+        details.assert_awaited_once_with(selected, ctx, refreshed, search._product_prefix(data, refreshed))
         checkout.assert_not_awaited()
         self.assertEqual(state, search.BUY_PROCESS)
         self.assertIs(ctx.user_data[search.SEARCH_CHATS_KEY][700][search.products_data_key]["products"].actual(), refreshed)
@@ -234,6 +317,7 @@ class SearchChoiceTests(unittest.IsolatedAsyncioTestCase):
 class TelegramStub(BaseRequest):
     def __init__(self):
         self.messages = []
+        self.alerts = []
 
     async def initialize(self):
         pass
@@ -246,7 +330,11 @@ class TelegramStub(BaseRequest):
         bot = {"id": 123, "is_bot": True, "first_name": "Test", "username": "TestBot"}
         if endpoint == "getMe":
             value = bot
-        elif endpoint in {"answerCallbackQuery", "editMessageReplyMarkup"}:
+        elif endpoint == "answerCallbackQuery":
+            if request_data.parameters.get("text"):
+                self.alerts.append(request_data.parameters["text"])
+            value = True
+        elif endpoint == "editMessageReplyMarkup":
             value = True
         elif endpoint in {"sendMessage", "editMessageText"}:
             params = request_data.parameters
@@ -273,6 +361,43 @@ def inbound(bot, chat_id, text, *, data=None, message_id=1):
 
 
 class SearchChoiceRoutingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_old_card_callbacks_after_a_new_search_cannot_checkout_the_new_product(self):
+        transport = TelegramStub()
+        app = ApplicationBuilder().token("123:test").request(transport).build()
+        app.add_handler(search.search)
+        notebook, pen = product(7), product(8, "Pen")
+
+        async def assistant(update, context):
+            item = pen if "pen" in update.message.text else notebook
+            await search.show_search_choices(update, context, [item])
+
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, assistant))
+        with patch.object(search, "get_available_product", side_effect={7: notebook, 8: pen}.get), patch(
+            "telegram_ecommerce.tamplates.products.count_occurrence_of_specified_rating", return_value=0,
+        ), patch("telegram_ecommerce.filters.decorators.user_exist", return_value=True), patch.object(
+            search, "send_a_shipping_message", new_callable=AsyncMock,
+        ) as checkout:
+            async with app:
+                await app.process_update(inbound(app.bot, 8003, "Find notebook"))
+                await app.process_update(inbound(app.bot, 8003, transport.messages[-1], data="search_choice:7"))
+                data = app.user_data[8003][search.SEARCH_CHATS_KEY][8003]
+                old_prefix = search._product_prefix(data, notebook)
+                await app.process_update(inbound(app.bot, 8003, "Find pen"))
+                choice_message_id = data[search.SEARCH_CHOICES_KEY]["message_id"]
+                await app.process_update(inbound(app.bot, 8003, transport.messages[-1], data="search_choice:8",
+                                                message_id=choice_message_id))
+                current_prefix = search._product_prefix(data, pen)
+                message_count = len(transport.messages)
+                for action in ("product_details", "buy_product"):
+                    await app.process_update(inbound(app.bot, 8003, "Old notebook card", data=old_prefix + action))
+                checkout.assert_not_awaited()
+                self.assertEqual(len(transport.messages), message_count)
+                self.assertEqual(len(transport.alerts), 2)
+                await app.process_update(inbound(app.bot, 8003, "Current pen card",
+                                                data=current_prefix + "buy_product", message_id=choice_message_id))
+        checkout.assert_awaited_once()
+        self.assertIs(checkout.await_args.args[2], pen)
+
     async def test_choices_from_plain_assistant_flow_enter_existing_details_and_checkout(self):
         transport = TelegramStub()
         app = ApplicationBuilder().token("123:test").request(transport).build()
@@ -294,8 +419,9 @@ class SearchChoiceRoutingTests(unittest.IsolatedAsyncioTestCase):
                 checkout.assert_not_awaited()
                 self.assertIn("Product details", transport.messages[-1])
                 self.assertIn("9.99", transport.messages[-1])
+                data = app.user_data[8001][search.SEARCH_CHATS_KEY][8001]
                 await app.process_update(inbound(app.bot, 8001, transport.messages[-1],
-                                                data=search.pattern_identifier + "buy_product"))
+                                                data=search._product_prefix(data, item) + "buy_product"))
         checkout.assert_awaited_once()
         self.assertEqual(checkout.await_args.args[2].id, 7)
 
@@ -324,7 +450,7 @@ class SearchChoiceRoutingTests(unittest.IsolatedAsyncioTestCase):
         with patch("telegram_ecommerce.filters.decorators.user_exist", return_value=False), patch.object(
             search, "send_a_shipping_message", new_callable=AsyncMock,
         ) as checkout:
-            state = await search.send_a_shipping_message_callback(selected, ctx)
+            state = await search.send_a_shipping_message_callback(card_update(selected, ctx, "buy_product"), ctx)
         checkout.assert_not_awaited()
         self.assertEqual(state, search.END)
         selected.effective_message.reply_text.assert_awaited_once()
